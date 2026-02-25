@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>US Parcels - Extract & Ingest</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="https://unpkg.com/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.css">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f1117; --surface: #1a1d27; --surface-hover: #242836;
+      --border: #2e3241; --text: #e4e6ef; --text-muted: #8b8fa3;
+      --accent: #6c63ff; --green: #34d399; --red: #f87171; --yellow: #fbbf24;
+      --radius: 10px;
+    }
+    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+    header {
+      border-bottom: 1px solid var(--border); padding: 1rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    header h1 { font-size: 1.1rem; font-weight: 700; }
+    header h1 span { color: var(--accent); }
+    header nav { display: flex; gap: 0.75rem; }
+    header nav a {
+      font-size: 0.8rem; color: var(--text-muted); text-decoration: none;
+      padding: 0.3rem 0.6rem; border-radius: 6px; border: 1px solid var(--border);
+    }
+    header nav a:hover { color: var(--text); border-color: var(--accent); }
+
+    .layout { display: flex; height: calc(100vh - 56px); }
+    .sidebar {
+      width: 360px; min-width: 360px; padding: 1.25rem; overflow-y: auto;
+      border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 1rem;
+    }
+    .map-pane { flex: 1; position: relative; }
+    .map-pane .maplibregl-map { width: 100%; height: 100%; }
+
+    .section-label {
+      font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem;
+    }
+
+    .field { display: flex; flex-direction: column; gap: 0.25rem; }
+    .field label { font-size: 0.78rem; color: var(--text-muted); }
+    .field input, .field select {
+      font-family: inherit; font-size: 0.85rem; padding: 0.45rem 0.7rem;
+      border-radius: 6px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text);
+    }
+
+    .checkbox-row {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 0.82rem; color: var(--text-muted);
+    }
+    .checkbox-row input[type="checkbox"] { accent-color: var(--accent); }
+
+    .bbox-display {
+      font-family: 'Courier New', monospace; font-size: 0.78rem;
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.5rem 0.7rem; color: var(--text-muted);
+      min-height: 2rem; word-break: break-all;
+    }
+
+    .btn {
+      font-family: inherit; font-size: 0.85rem; font-weight: 600;
+      padding: 0.6rem 1rem; border-radius: 8px; border: none; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 0.4rem;
+      transition: background 0.12s;
+    }
+    .btn-primary { background: var(--accent); color: #fff; }
+    .btn-primary:hover { background: #5b52e6; }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary {
+      background: transparent; color: var(--text); border: 1px solid var(--border);
+    }
+    .btn-secondary:hover { border-color: var(--accent); }
+
+    .job-log {
+      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+      padding: 0.6rem 0.7rem; font-family: 'Courier New', monospace; font-size: 0.75rem;
+      color: var(--text-muted); max-height: 200px; overflow-y: auto; line-height: 1.6;
+    }
+    .job-log .done { color: var(--green); }
+    .job-log .err { color: var(--red); }
+
+    .hint {
+      font-size: 0.75rem; color: var(--text-muted); line-height: 1.5;
+      padding: 0.5rem 0.7rem; background: var(--surface); border-radius: 6px;
+      border-left: 3px solid var(--accent);
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span>US Parcels</span> Extract & Ingest</h1>
+  <nav>
+    <a href="/">Dashboard</a>
+    <a href="/map.html">Full Map</a>
+    <a href="http://localhost:8888" target="_blank">Style Editor</a>
+  </nav>
+</header>
+
+<div class="layout">
+  <div class="sidebar">
+    <div class="hint">
+      Draw a rectangle on the map to define the extraction area.
+      Keep it reasonable -- city/county scale extracts are fast, state-scale takes minutes.
+    </div>
+
+    <div>
+      <div class="section-label">Bounding Box</div>
+      <div class="bbox-display" id="bbox-display">Draw a rectangle on the map...</div>
+    </div>
+
+    <div class="field">
+      <label>Extract Name</label>
+      <input type="text" id="extract-name" placeholder="e.g. denver_downtown" />
+    </div>
+
+    <div>
+      <div class="section-label">Output Formats</div>
+      <div class="checkbox-row"><input type="checkbox" id="fmt-parquet" checked> GeoParquet</div>
+      <div class="checkbox-row"><input type="checkbox" id="fmt-pmtiles"> PMTiles</div>
+      <div class="checkbox-row"><input type="checkbox" id="fmt-fgb"> FlatGeoBuf</div>
+    </div>
+
+    <div class="checkbox-row">
+      <input type="checkbox" id="load-postgis" checked> Load into PostGIS
+    </div>
+
+    <div class="field">
+      <label>Simplification (optional, degrees)</label>
+      <input type="number" id="simplify" placeholder="e.g. 0.0001" step="0.00001" min="0" />
+    </div>
+
+    <button class="btn btn-primary" id="btn-extract" disabled>Extract</button>
+
+    <div id="job-section" style="display:none;">
+      <div class="section-label">Job Log</div>
+      <div class="job-log" id="job-log"></div>
+    </div>
+  </div>
+
+  <div class="map-pane">
+    <div id="map"></div>
+  </div>
+</div>
+
+<script>
+const API_BASE = 'http://localhost:8001';
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '&copy; OpenStreetMap' },
+      parcels: { type: 'vector', tiles: ['http://localhost:3000/parcel_raw/{z}/{x}/{y}'], minzoom: 0, maxzoom: 22 }
+    },
+    layers: [
+      { id: 'osm', type: 'raster', source: 'osm' },
+      { id: 'parcels-fill', type: 'fill', source: 'parcels', 'source-layer': 'parcel_raw', minzoom: 12,
+        paint: { 'fill-color': '#6c63ff', 'fill-opacity': 0.3 } },
+      { id: 'parcels-outline', type: 'line', source: 'parcels', 'source-layer': 'parcel_raw', minzoom: 13,
+        paint: { 'line-color': '#4f46e5', 'line-width': 0.5 } }
+    ]
+  },
+  center: [-98.5, 39.8],
+  zoom: 4
+});
+map.addControl(new maplibregl.NavigationControl());
+
+const draw = new MapboxDraw({
+  displayControlsDefault: false,
+  controls: { polygon: false, trash: true },
+  modes: {
+    ...MapboxDraw.modes,
+    draw_rectangle: MapboxDraw.modes.draw_polygon
+  }
+});
+map.addControl(draw, 'top-left');
+
+// custom rectangle draw button
+const rectBtn = document.createElement('button');
+rectBtn.className = 'mapbox-gl-draw_ctrl-draw-btn';
+rectBtn.title = 'Draw rectangle';
+rectBtn.textContent = '▭';
+rectBtn.style.cssText = 'font-size:18px; line-height:29px;';
+rectBtn.onclick = () => {
+  draw.deleteAll();
+  draw.changeMode('draw_polygon');
+};
+
+map.on('load', () => {
+  const drawControls = document.querySelector('.mapboxgl-ctrl-group.mapbox-gl-draw_ctrl-draw-btn')?.parentElement;
+  if (drawControls) drawControls.prepend(rectBtn);
+});
+
+let currentBbox = null;
+
+function updateBbox() {
+  const features = draw.getAll();
+  if (!features.features.length) {
+    currentBbox = null;
+    document.getElementById('bbox-display').textContent = 'Draw a rectangle on the map...';
+    document.getElementById('btn-extract').disabled = true;
+    return;
+  }
+  const coords = features.features[0].geometry.coordinates[0];
+  const lngs = coords.map(c => c[0]);
+  const lats = coords.map(c => c[1]);
+  currentBbox = [
+    Math.min(...lngs).toFixed(6),
+    Math.min(...lats).toFixed(6),
+    Math.max(...lngs).toFixed(6),
+    Math.max(...lats).toFixed(6)
+  ].map(Number);
+
+  document.getElementById('bbox-display').textContent =
+    `[${currentBbox[0]}, ${currentBbox[1]}, ${currentBbox[2]}, ${currentBbox[3]}]`;
+  document.getElementById('btn-extract').disabled = false;
+}
+
+map.on('draw.create', updateBbox);
+map.on('draw.update', updateBbox);
+map.on('draw.delete', updateBbox);
+
+// extract
+document.getElementById('btn-extract').addEventListener('click', async () => {
+  if (!currentBbox) return;
+  const name = document.getElementById('extract-name').value.trim();
+  if (!name) { alert('Enter an extract name'); return; }
+
+  const formats = [];
+  if (document.getElementById('fmt-parquet').checked) formats.push('parquet');
+  if (document.getElementById('fmt-pmtiles').checked) formats.push('pmtiles');
+  if (document.getElementById('fmt-fgb').checked) formats.push('fgb');
+  if (!formats.length) { alert('Select at least one output format'); return; }
+
+  const simplifyVal = document.getElementById('simplify').value;
+  const body = {
+    name,
+    bbox: currentBbox,
+    load_postgis: document.getElementById('load-postgis').checked,
+    formats,
+    simplify: simplifyVal ? parseFloat(simplifyVal) : null
+  };
+
+  document.getElementById('btn-extract').disabled = true;
+  document.getElementById('job-section').style.display = 'block';
+  const logEl = document.getElementById('job-log');
+  logEl.innerHTML = '<div>submitting...</div>';
+
+  try {
+    const res = await fetch(`${API_BASE}/extract`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+
+    if (!res.ok) {
+      logEl.innerHTML = `<div class="err">API error: ${res.status}</div>`;
+      document.getElementById('btn-extract').disabled = false;
+      return;
+    }
+
+    const job = await res.json();
+    logEl.innerHTML = `<div>job ${job.id}: ${job.status}</div>`;
+
+    const poll = setInterval(async () => {
+      try {
+        const r = await fetch(`${API_BASE}/jobs/${job.id}`);
+        const j = await r.json();
+        logEl.innerHTML = j.log.map(l => {
+          const cls = l.startsWith('error') || l.startsWith('exception') ? 'err' : l === 'done' ? 'done' : '';
+          return `<div class="${cls}">${l}</div>`;
+        }).join('');
+        logEl.scrollTop = logEl.scrollHeight;
+
+        if (j.status === 'completed' || j.status === 'failed') {
+          clearInterval(poll);
+          document.getElementById('btn-extract').disabled = false;
+          if (j.status === 'completed') {
+            logEl.innerHTML += '<div class="done">extraction complete -- reload map to see new data</div>';
+          }
+        }
+      } catch { /* keep polling */ }
+    }, 2000);
+
+  } catch (err) {
+    logEl.innerHTML = `<div class="err">connection error: ${err.message}</div><div>is the ingest-api running? start with: docker compose --profile ingest up -d</div>`;
+    document.getElementById('btn-extract').disabled = false;
+  }
+});
+</script>
+</body>
+</html>

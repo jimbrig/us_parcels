@@ -1,0 +1,135 @@
+{
+  "version": 8,
+  "name": "US Parcels",
+  "metadata": {
+    "maputnik:renderer": "mlgljs"
+  },
+  "sources": {
+    "osm-raster": {
+      "type": "raster",
+      "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      "tileSize": 256,
+      "attribution": "&copy; OpenStreetMap contributors"
+    },
+    "parcels-pmtiles": {
+      "type": "vector",
+      "tiles": ["http://localhost:3000/atlanta_downtown/{z}/{x}/{y}"],
+      "minzoom": 12,
+      "maxzoom": 16
+    },
+    "parcels-postgis": {
+      "type": "vector",
+      "tiles": ["http://localhost:3000/parcel_raw/{z}/{x}/{y}"],
+      "minzoom": 0,
+      "maxzoom": 22
+    }
+  },
+  "layers": [
+    {
+      "id": "basemap",
+      "type": "raster",
+      "source": "osm-raster"
+    },
+    {
+      "id": "parcels-fill",
+      "type": "fill",
+      "source": "parcels-postgis",
+      "source-layer": "parcel_raw",
+      "minzoom": 12,
+      "paint": {
+        "fill-color": [
+          "case",
+          ["has", "totalvalue"],
+          [
+            "interpolate", ["linear"],
+            ["to-number", ["get", "totalvalue"], 0],
+            0, "#f7fbff",
+            100000, "#c6dbef",
+            250000, "#6baed6",
+            500000, "#2171b5",
+            1000000, "#08306b"
+          ],
+          "#6c63ff"
+        ],
+        "fill-opacity": [
+          "interpolate", ["linear"], ["zoom"],
+          12, 0.3,
+          15, 0.5,
+          18, 0.6
+        ]
+      }
+    },
+    {
+      "id": "parcels-outline",
+      "type": "line",
+      "source": "parcels-postgis",
+      "source-layer": "parcel_raw",
+      "minzoom": 13,
+      "paint": {
+        "line-color": "#4f46e5",
+        "line-width": [
+          "interpolate", ["linear"], ["zoom"],
+          13, 0.3,
+          16, 1,
+          18, 1.5
+        ],
+        "line-opacity": [
+          "interpolate", ["linear"], ["zoom"],
+          13, 0.4,
+          16, 0.8
+        ]
+      }
+    },
+    {
+      "id": "parcels-label",
+      "type": "symbol",
+      "source": "parcels-postgis",
+      "source-layer": "parcel_raw",
+      "minzoom": 17,
+      "layout": {
+        "text-field": ["coalesce", ["get", "parceladdr"], ""],
+        "text-size": [
+          "interpolate", ["linear"], ["zoom"],
+          17, 9,
+          19, 12
+        ],
+        "text-anchor": "center",
+        "text-max-width": 8,
+        "text-allow-overlap": false
+      },
+      "paint": {
+        "text-color": "#1e1b4b",
+        "text-halo-color": "rgba(255,255,255,0.85)",
+        "text-halo-width": 1.5
+      }
+    },
+    {
+      "id": "parcels-pmtiles-fill",
+      "type": "fill",
+      "source": "parcels-pmtiles",
+      "source-layer": "lr_parcel_us",
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "fill-color": "#6c63ff",
+        "fill-opacity": 0.4
+      }
+    },
+    {
+      "id": "parcels-pmtiles-outline",
+      "type": "line",
+      "source": "parcels-pmtiles",
+      "source-layer": "lr_parcel_us",
+      "layout": {
+        "visibility": "none"
+      },
+      "paint": {
+        "line-color": "#4f46e5",
+        "line-width": 1
+      }
+    }
+  ],
+  "center": [-84.3857, 33.7545],
+  "zoom": 14
+}

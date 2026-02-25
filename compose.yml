@@ -101,6 +101,39 @@ services:
       retries: 5
     restart: unless-stopped
 
+  # ---- Maputnik (visual style editor) ----
+  maputnik:
+    image: ghcr.io/maplibre/maputnik:main
+    container_name: parcels-maputnik
+    ports:
+      - "8888:8000"
+    restart: unless-stopped
+
+  # ---- Ingestion API (FastAPI) ----
+  ingest-api:
+    build: ./services/ingest-api
+    container_name: parcels-ingest-api
+    ports:
+      - "8001:8001"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      PGHOST: postgis
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-parcels}
+      PGUSER: ${POSTGRES_USER:-parcels}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-parcels}
+      PG_USE_COPY: "YES"
+      GPKG_PATH: /workspace/LR_PARCEL_NATIONWIDE_FILE_US_2026_Q1.gpkg
+      GPKG_LAYER: lr_parcel_us
+    profiles:
+      - ingest
+    restart: unless-stopped
+
   # ---- Dashboard + static file server (nginx) ----
   web:
     image: nginx:alpine
@@ -110,8 +143,10 @@ services:
     volumes:
       - ./index.html:/usr/share/nginx/html/index.html:ro
       - ./map.html:/usr/share/nginx/html/map.html:ro
+      - ./ingest.html:/usr/share/nginx/html/ingest.html:ro
       - ./assets:/usr/share/nginx/html/assets:ro
       - ./data:/usr/share/nginx/html/data:ro
+      - ./config:/usr/share/nginx/html/config:ro
     restart: unless-stopped
 
   # ---- TiTiler (dynamic raster COG tile server) ----

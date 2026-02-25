@@ -319,7 +319,11 @@
 
 <header>
   <h1><span>US Parcels</span> Services Dashboard</h1>
-  <div class="header-meta">155M parcel records &middot; docker compose stack</div>
+  <div style="display:flex;align-items:center;gap:1rem;">
+    <a class="btn" href="/ingest.html" style="font-size:0.78rem;">Extract & Ingest</a>
+    <button class="btn" onclick="window.open('http://localhost:8888','_blank','noopener')" style="font-size:0.78rem;">Style Editor</button>
+    <span class="header-meta">155M parcel records &middot; docker compose stack</span>
+  </div>
 </header>
 
 <main>
@@ -434,6 +438,16 @@ const SERVICES = [
       { label: 'UI', href: 'http://localhost:9090' },
       { label: 'Collections', href: 'http://localhost:9090/collections.json' },
       { label: 'Functions', href: 'http://localhost:9090/functions.json' }
+    ]
+  },
+  {
+    name: 'Maputnik',
+    desc: 'Visual style editor for MapLibre GL styles. Edit parcel layer styling, colors, labels, and zoom-level rules interactively.',
+    port: 8888,
+    primaryUrl: 'http://localhost:8888',
+    healthUrl: null,
+    links: [
+      { label: 'Editor', href: 'http://localhost:8888' }
     ]
   },
   {
