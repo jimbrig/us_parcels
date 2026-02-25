@@ -1,305 +1,152 @@
 # US Parcels
 
-155 million US parcel records from [LandRecords.us](https://landrecords.us), served through a Docker-based geospatial stack with PostGIS as the central store.
+Geospatial data platform for 155 million US parcel records from [LandRecords.us](https://landrecords.us).
+
+Two goals:
+1. **Data extraction** -- efficiently break down the monolithic 155M-record GPKG into usable, cloud-native formats (GeoParquet, PMTiles, FlatGeoBuf) and a centralized PostGIS store
+2. **Tooling showcase** -- demonstrate modern geospatial infrastructure (tile servers, feature APIs, object storage, DuckDB analytics) using real data
 
 ## Architecture
 
 ```
-Source GPKG (155M parcels)
+Source GPKG (155M parcels, local disk)
     |
     |  ogr2ogr -spat / -where  (extract by state, county, or bbox)
     v
- PostGIS  <-- central store, single source of truth
+PostGIS (:5432)  <-- central query store
     |
     |--- Martin (:3000)         vector tiles from tables + PMTiles files
     |--- pg_tileserv (:7800)    MVT tiles from tables & SQL functions
-    |--- pg_featureserv (:9000) OGC Features API (GeoJSON)
+    |--- pg_featureserv (:9090) OGC Features API (GeoJSON)
     |
-    |  ogr2ogr / DuckDB  (export derivatives from PostGIS)
+    |  ogr2ogr / DuckDB  (export derivatives)
     v
- GeoParquet   analytics, DuckDB/pandas/Arrow queries
- PMTiles      static vector tile hosting (CDN/S3)
- FlatGeoBuf   HTTP range-request serving
-```
-
-PostGIS is the single source of truth. All tile and feature servers auto-discover tables loaded into PostGIS. Derivative formats (GeoParquet, PMTiles, FlatGeoBuf) are exported from PostGIS for specific use cases like static hosting or analytics.
-
-## Directory Structure
-
-```
-us_parcels/
-├── assets/                       # screenshots, images
-├── data/
-│   ├── flatgeobuf/               # FlatGeoBuf exports
-│   ├── geoparquet/               # GeoParquet exports
-│   ├── pmtiles/                  # PMTiles for static tile serving
-│   └── samples/                  # test samples
-├── docs/
-│   └── MIGRATION_PLAN.md         # cloud migration strategy
-├── scripts/
-│   ├── extract_state.ps1         # extract single state by bbox
-│   ├── ingest.sh                 # bash ingest for Docker GDAL container
-│   ├── ingest_postgis.ps1        # PowerShell ingest wrapper
-│   ├── pipeline.ps1              # unified extract -> load -> export
-│   ├── postgis_schema.sql        # normalized PostGIS schema
-│   └── query.py                  # DuckDB query helper
-├── compose.yml                   # docker compose (full service stack)
-├── .env                          # environment variables
-├── index.html                    # services dashboard
-├── map.html                      # full-screen MapLibre viewer
-├── pixi.toml                     # conda dependencies & tasks
-└── LR_PARCEL_NATIONWIDE_*.gpkg   # source data (155M parcels, not tracked)
+MinIO S3 (:9000)  local object storage
+    |
+    +-- GeoParquet   analytics via DuckDB/pandas/Arrow
+    +-- PMTiles      static vector tile hosting (CDN/S3)
+    +-- FlatGeoBuf   HTTP range-request serving
 ```
 
 ## Quick Start
 
-### Prerequisites
-
-- [Docker Desktop](https://docs.docker.com/desktop/)
-- [Pixi](https://pixi.sh) (for local GDAL/DuckDB tools)
-
-### 1. Start the Stack
-
 ```powershell
-# start PostGIS + Martin + pg_tileserv + pg_featureserv
+# clone
+git clone https://github.com/jimbrig/us_parcels.git
+cd us_parcels
+
+# copy environment file
+cp .env.example .env
+
+# start the stack
 docker compose up -d
 
-# verify all services are healthy
+# verify
 docker compose ps
 ```
 
-PostGIS initializes with the parcels schema on first start (tables, indexes, views, search functions). Martin, pg_tileserv, and pg_featureserv auto-discover all PostGIS tables.
-
-### 2. Extract & Load Data
-
-The `pipeline.ps1` script handles the full workflow. Extract from the monolithic GPKG, load into PostGIS, and optionally export derivative formats:
-
-```powershell
-# full pipeline: extract state -> load into PostGIS -> export PMTiles + FlatGeoBuf
-.\scripts\pipeline.ps1 -Action full -State "13" -Name "georgia"
-
-# extract just a bounding box
-.\scripts\pipeline.ps1 -Action extract-bbox -Bbox "-84.40,33.74,-84.37,33.77" -Name "atlanta_dt"
-
-# load an existing file into PostGIS
-.\scripts\pipeline.ps1 -Action load -Source data/geoparquet/atlanta_downtown.parquet
-
-# export from PostGIS to derivative formats
-.\scripts\pipeline.ps1 -Action export -Format pmtiles -Name "atlanta_parcels"
-
-# check what's loaded
-.\scripts\pipeline.ps1 -Action status
-```
-
-### 3. Open the Dashboard
-
-Open `index.html` in a browser (serve it via HTTP for full functionality):
-
-```powershell
-python -m http.server 8080
-start http://localhost:8080
-```
-
-The dashboard shows:
-- Service health status with links to each UI
-- Interactive map preview (switch between PMTiles and PostGIS sources)
-- Architecture diagram
-- PostGIS table status (row counts, extents)
-- Connection strings
-
 ## Services
 
-| Service | Port | Purpose | URL |
-|---------|------|---------|-----|
-| **PostGIS** | 5432 | Central spatial database (PostgreSQL 17 + PostGIS 3.5) | `psql -h localhost -U parcels -d parcels` |
-| **Martin** | 3000 | Vector tiles from PostGIS + PMTiles files | http://localhost:3000 |
-| **pg_tileserv** | 7800 | MVT tiles from PostGIS tables and SQL functions | http://localhost:7800 |
-| **pg_featureserv** | 9000 | OGC Features API (GeoJSON, filtering, spatial queries) | http://localhost:9000 |
-| **TiTiler** | 8000 | Dynamic raster COG tile server (opt-in profile) | http://localhost:8000 |
+| Service | Port | Purpose |
+|---------|------|---------|
+| **PostGIS** | 5432 | PostgreSQL 17 + PostGIS 3.5, tuned for spatial workloads |
+| **Martin** | 3000 | Vector tiles from PostGIS tables + PMTiles files |
+| **pg_tileserv** | 7800 | MVT tiles from PostGIS tables and SQL functions |
+| **pg_featureserv** | 9090 | OGC API Features (GeoJSON, filtering, spatial queries) |
+| **MinIO** | 9000/9001 | S3-compatible object storage (API / web console) |
+| **Dashboard** | 8080 | nginx serving index.html with service health + map preview |
+| **TiTiler** | 8000 | Dynamic raster COG tile server (profile: `raster`) |
+| **GDAL** | -- | On-demand ingestion container (profile: `tools`) |
 
 ### Docker Profiles
 
 ```powershell
-# core stack (default): postgis, martin, pg_tileserv, pg_featureserv
-docker compose up -d
-
-# include raster tile server
-docker compose --profile raster up -d
-
-# run GDAL container for ingestion
-docker compose --profile tools run --rm gdal ogr2ogr ...
+docker compose up -d                              # core stack
+docker compose --profile raster up -d             # + TiTiler
+docker compose --profile tools run --rm gdal ...  # GDAL one-shot
 ```
 
 ## Data Pipeline
 
-### Extraction from Source GPKG
-
-The GPKG has a spatial index. Use `-spat` (bounding box) for fast extraction:
+### Extract from Source GPKG
 
 ```powershell
-$gpkg = "LR_PARCEL_NATIONWIDE_FILE_US_2026_Q1.gpkg"
-
-# extract by bounding box (seconds for city-scale)
+# by bounding box (fast, uses spatial index)
 pixi run ogr2ogr -f Parquet -lco COMPRESSION=ZSTD `
   -spat -84.40 33.74 -84.37 33.77 `
-  data/geoparquet/atlanta_downtown.parquet $gpkg lr_parcel_us
+  data/geoparquet/atlanta.parquet $gpkg lr_parcel_us
 
-# extract by attribute filter
+# by attribute filter (exact but slower)
 pixi run ogr2ogr -f Parquet -lco COMPRESSION=ZSTD `
-  -where "statefp = '13' AND countyfp = '121'" `
-  data/geoparquet/fulton_county.parquet $gpkg lr_parcel_us
+  -where "statefp = '08'" `
+  data/geoparquet/colorado.parquet $gpkg lr_parcel_us
+
+# full pipeline: extract -> PostGIS -> export derivatives
+.\scripts\pipeline.ps1 -Action full -State "08" -Name "colorado"
 ```
 
-### Loading into PostGIS
-
-PostGIS is the central store. Load data via the Docker GDAL container:
+### Load into PostGIS
 
 ```powershell
-# via pipeline script (recommended)
-.\scripts\pipeline.ps1 -Action load -Source data/geoparquet/atlanta_downtown.parquet
-
-# via docker directly
 docker compose --profile tools run --rm gdal ogr2ogr `
   -f PostgreSQL "PG:host=postgis dbname=parcels user=parcels password=parcels" `
-  data/geoparquet/atlanta_downtown.parquet `
+  data/geoparquet/colorado.parquet `
   -nln parcels.parcel_raw -append -progress --config PG_USE_COPY YES
-
-# build spatial index after bulk loading
-docker compose exec postgis psql -U parcels -d parcels `
-  -c "CREATE INDEX IF NOT EXISTS idx_parcel_raw_geom ON parcels.parcel_raw USING gist(geom);"
 ```
 
-### Exporting Derivative Formats
-
-Export from PostGIS to formats optimized for specific use cases:
-
-```powershell
-# GeoParquet (analytics with DuckDB/pandas/Arrow)
-docker compose --profile tools run --rm gdal ogr2ogr `
-  -f Parquet -lco COMPRESSION=ZSTD -lco GEOMETRY_ENCODING=GEOARROW `
-  data/geoparquet/export.parquet `
-  "PG:host=postgis dbname=parcels user=parcels password=parcels" parcels.parcel_raw
-
-# PMTiles (static vector tile hosting)
-docker compose --profile tools run --rm gdal ogr2ogr `
-  -f PMTiles -dsco MINZOOM=12 -dsco MAXZOOM=16 `
-  data/pmtiles/export.pmtiles `
-  "PG:host=postgis dbname=parcels user=parcels password=parcels" parcels.parcel_raw
-
-# FlatGeoBuf (HTTP range-request serving)
-docker compose --profile tools run --rm gdal ogr2ogr `
-  -f FlatGeoBuf `
-  data/flatgeobuf/export.fgb `
-  "PG:host=postgis dbname=parcels user=parcels password=parcels" parcels.parcel_raw
-```
-
-## Serving Methods Compared
-
-| Method | Format | Best For | Pros | Cons |
-|--------|--------|----------|------|------|
-| **Martin + PostGIS** | MVT | Interactive web maps with live data | Real-time, auto-discovers tables, supports SQL functions | Requires running PostGIS |
-| **Martin + PMTiles** | MVT | Static tile hosting, CDN delivery | No database needed, fast, cacheable | Requires rebuild for updates |
-| **pg_tileserv** | MVT | PostGIS-native tile serving | Auto-discovers, supports parameterized SQL functions as tile sources | PostGIS only |
-| **pg_featureserv** | GeoJSON | Feature queries, OGC API compliance | Filtering, spatial queries, pagination | Not suited for rendering millions of features |
-| **FlatGeoBuf** | FGB | Direct browser consumption via HTTP range requests | No server needed, spatial filtering built-in | No styling, client does all rendering |
-| **GeoParquet** | Parquet | Bulk analytics with DuckDB/pandas/Spark | Columnar compression, fast aggregations | Not directly renderable in browsers |
-
-## Querying
-
-### PostGIS (SQL)
+### Query with DuckDB (MinIO S3)
 
 ```sql
--- top parcels by assessed value
-SELECT parceladdr, ownername, totalvalue
-FROM parcels.parcel_raw
-WHERE totalvalue IS NOT NULL
-ORDER BY totalvalue DESC LIMIT 10;
+SET s3_endpoint = 'localhost:9000';
+SET s3_access_key_id = 'minioadmin';
+SET s3_secret_access_key = 'minioadmin';
+SET s3_use_ssl = false;
+SET s3_url_style = 'path';
 
--- parcels within a bounding box
-SELECT parceladdr, ownername, ST_Area(ST_Transform(geom, 32616)) as area_sqm
-FROM parcels.parcel_raw
-WHERE geom && ST_MakeEnvelope(-84.40, 33.74, -84.37, 33.77, 4326)
-ORDER BY area_sqm DESC LIMIT 10;
-
--- search by owner name (uses trigram index)
-SELECT * FROM parcels.search_by_owner('COCA COLA');
-
--- search by address
-SELECT * FROM parcels.search_by_address('PEACHTREE');
+SELECT statefp, COUNT(*) as parcels
+FROM read_parquet('s3://geodata/parcels/raw/**/*.parquet', hive_partitioning=true)
+GROUP BY statefp ORDER BY parcels DESC;
 ```
 
-### DuckDB (GeoParquet)
+## Attribute Coverage
 
-```powershell
-# query parquet files directly
-duckdb -c "SELECT parceladdr, ownername FROM 'data/geoparquet/*.parquet' LIMIT 10"
+Coverage varies wildly by county assessor. The parcel geometry + ID + owner + address are universal. Everything else is county-dependent:
 
-# spatial query with DuckDB
-duckdb -c "
-  INSTALL spatial; LOAD spatial;
-  SELECT parceladdr, ownername,
-    ST_Area(ST_Transform(geom, 'EPSG:4326', 'EPSG:32616')) as area_sqm
-  FROM 'data/geoparquet/atlanta_downtown.parquet'
-  ORDER BY area_sqm DESC LIMIT 5
-"
-
-# aggregate across all loaded states
-duckdb -c "SELECT statefp, countyfp, COUNT(*) FROM 'data/geoparquet/*.parquet' GROUP BY ALL"
-```
-
-### pg_featureserv (HTTP API)
-
-```powershell
-# list collections
-curl http://localhost:9000/collections.json
-
-# get features as GeoJSON (with limit and bbox filter)
-curl "http://localhost:9000/collections/parcels.parcel_raw/items.json?limit=10&bbox=-84.39,33.75,-84.38,33.76"
-
-# call a SQL function
-curl "http://localhost:9000/functions/parcels.search_by_address/items.json?search_term=PEACHTREE&limit=5"
-```
-
-## PostGIS Tuning
-
-The compose file starts PostgreSQL with parameters tuned for spatial bulk workloads:
-
-| Parameter | Value | Purpose |
-|-----------|-------|---------|
-| `shared_buffers` | 512MB | In-memory page cache |
-| `work_mem` | 64MB | Per-operation sort/hash memory |
-| `maintenance_work_mem` | 1GB | Fast index builds and VACUUM |
-| `effective_cache_size` | 2GB | Planner hint for OS cache |
-| `max_wal_size` | 4GB | Fewer checkpoints during bulk loads |
-| `random_page_cost` | 1.1 | SSD-optimized planner cost |
-| `max_parallel_workers_per_gather` | 4 | Parallel spatial queries |
-
-For initial bulk loads of millions of records, also consider running `ANALYZE` after loading:
-
-```sql
-ANALYZE parcels.parcel_raw;
-```
+| Field | CO (Denver) | TX (Dallas) | NY (Manhattan) | GA (Atlanta) |
+|-------|-------------|-------------|----------------|--------------|
+| address | 99% | 96% | 98% | 99% |
+| owner | 100% | 100% | 100% | 100% |
+| totalvalue | 98% | 100% | 90% | 0% |
+| yearbuilt | 80% | 0% | 90% | 0% |
+| usedesc | 100% | 0% | 6% | 0% |
+| saleamt | 93% | 0% | 0% | 0% |
 
 ## Connection Strings
 
-| Context | Connection String |
-|---------|-------------------|
-| From host | `postgresql://parcels:parcels@localhost:5432/parcels` |
+| Context | Value |
+|---------|-------|
+| Host (psql) | `psql -h localhost -p 5432 -U parcels -d parcels` |
+| Host (URI) | `postgresql://parcels:parcels@localhost:5432/parcels` |
 | Docker network | `postgresql://parcels:parcels@postgis:5432/parcels` |
-| psql | `psql -h localhost -p 5432 -U parcels -d parcels` |
-| Cursor MCP | Configured in `.cursor/mcp.json` |
+| MinIO S3 | `http://localhost:9000` (user: minioadmin) |
+| MinIO Console | `http://localhost:9001` |
 
-## Pixi Tasks
+## Documentation
 
-```powershell
-pixi run up        # docker compose up -d
-pixi run down      # docker compose down
-pixi run logs      # docker compose logs -f
-pixi run status    # docker compose ps
-pixi run psql      # connect to PostGIS
-pixi run index     # build spatial index on parcel_raw
-pixi run reset-db  # wipe PostGIS volume and reinitialize
-```
+- **[docs/FORMATS.md](docs/FORMATS.md)** -- comprehensive reference for all geospatial formats, tile specifications (MVT, MLT, PMTiles), serving methods, and enrichment data sources
+- **[docs/MIGRATION_PLAN.md](docs/MIGRATION_PLAN.md)** -- cloud migration strategy (Azure Blob, hive-partitioned GeoParquet, DuckDB cloud queries)
+
+## Enrichment Roadmap
+
+| Priority | Source | Value | Status |
+|----------|--------|-------|--------|
+| 1 | Census ACS block groups | Income, demographics, housing tenure | Planned |
+| 2 | FEMA NFHL flood zones | Flood risk per parcel | Planned |
+| 3 | Overture Maps buildings | Building footprints, coverage ratio | Planned |
+| 4 | SSURGO soils | Drainage, buildability, farmland class | Planned |
+| 5 | NWI wetlands | Development constraints | Planned |
+| 6 | USGS 3DEP elevation | Slope, terrain, viewshed | Planned |
+| 7 | RealEstateAPI | AVM, tax, mortgage, comps (targeted) | Available |
 
 ## Schema Reference
 
@@ -307,8 +154,8 @@ pixi run reset-db  # wipe PostGIS volume and reinitialize
 |-------|------|-------------|
 | `parcelid` | String | Primary parcel identifier |
 | `geoid` | String | Combined state+county FIPS |
-| `statefp` | String | State FIPS code (e.g., "13" = Georgia) |
-| `countyfp` | String | County FIPS code (e.g., "121" = Fulton) |
+| `statefp` | String | State FIPS code |
+| `countyfp` | String | County FIPS code |
 | `parceladdr` | String | Parcel address |
 | `ownername` | String | Property owner name |
 | `totalvalue` | Integer64 | Total assessed value |
