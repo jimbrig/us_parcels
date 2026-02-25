@@ -1,0 +1,22 @@
+{
+  "name": "us-parcels",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Geospatial platform for 155M US parcel records",
+  "scripts": {
+    "dev": "docker compose up -d && echo 'services running'",
+    "dev:ingest": "docker compose --profile ingest up -d",
+    "dev:all": "docker compose --profile ingest --profile raster up -d",
+    "down": "docker compose down",
+    "etl": "psql postgresql://parcels:parcels@localhost:5432/parcels -f scripts/etl_raw_to_parcel.sql",
+    "query:minio": "uv run --with duckdb scripts/query_minio.py",
+    "martin:config": "docker compose restart martin"
+  },
+  "dependencies": {
+    "maplibre-gl": "^5.19.0",
+    "@watergis/maplibre-gl-terradraw": "^1.12.1"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  }
+}

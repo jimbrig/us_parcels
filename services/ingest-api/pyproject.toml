@@ -1,0 +1,25 @@
+[project]
+name = "parcels-ingest-api"
+version = "0.2.0"
+description = "FastAPI service for extracting parcels from GPKG, loading into PostGIS, and exporting to cloud-native formats"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx",
+    "pytest",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]

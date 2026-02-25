@@ -2,17 +2,19 @@
 ingestion API -- extracts parcels from GPKG by bounding box,
 loads into PostGIS, and optionally exports to derivative formats.
 """
+from __future__ import annotations
+
 import os
-import json
 import subprocess
-import tempfile
 import threading
 from pathlib import Path
+from typing import Optional
+
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
-app = FastAPI(title="Parcels Ingestion API", version="0.1.0")
+app = FastAPI(title="Parcels Ingestion API", version="0.2.0")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 GPKG_PATH = os.environ.get("GPKG_PATH", "/workspace/LR_PARCEL_NATIONWIDE_FILE_US_2026_Q1.gpkg")
@@ -34,7 +36,7 @@ class ExtractRequest(BaseModel):
     load_postgis: bool = Field(True, description="load into PostGIS after extraction")
     table: str = Field("parcels.parcel_raw", description="target PostGIS table")
     formats: list[str] = Field(["parquet"], description="output formats: parquet, pmtiles, fgb")
-    simplify: float | None = Field(None, description="simplification tolerance (degrees), e.g. 0.0001")
+    simplify: Optional[float] = Field(None, description="simplification tolerance (degrees), e.g. 0.0001")
 
 
 class JobStatus(BaseModel):

@@ -49,10 +49,12 @@ services:
         condition: service_healthy
     volumes:
       - ./data/pmtiles:/pmtiles:ro
-    command: >-
-      --webui enable-for-all
-      postgresql://${POSTGRES_USER:-parcels}:${POSTGRES_PASSWORD:-parcels}@postgis:5432/${POSTGRES_DB:-parcels}
-      /pmtiles
+      - ./config:/config:ro
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-parcels}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parcels}
+      POSTGRES_DB: ${POSTGRES_DB:-parcels}
+    command: --config /config/martin.yaml
     restart: unless-stopped
 
   # ---- pg_tileserv (MVT tiles direct from PostGIS tables/functions) ----
@@ -120,7 +122,6 @@ services:
         condition: service_healthy
     volumes:
       - .:/workspace
-    working_dir: /workspace
     environment:
       PGHOST: postgis
       PGPORT: "5432"
@@ -130,6 +131,7 @@ services:
       PG_USE_COPY: "YES"
       GPKG_PATH: /workspace/LR_PARCEL_NATIONWIDE_FILE_US_2026_Q1.gpkg
       GPKG_LAYER: lr_parcel_us
+      DATA_DIR: /workspace/data
     profiles:
       - ingest
     restart: unless-stopped
@@ -141,12 +143,14 @@ services:
     ports:
       - "8080:80"
     volumes:
+      - ./config/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - ./index.html:/usr/share/nginx/html/index.html:ro
       - ./map.html:/usr/share/nginx/html/map.html:ro
       - ./ingest.html:/usr/share/nginx/html/ingest.html:ro
       - ./assets:/usr/share/nginx/html/assets:ro
       - ./data:/usr/share/nginx/html/data:ro
       - ./config:/usr/share/nginx/html/config:ro
+      - ./node_modules:/usr/share/nginx/html/node_modules:ro
     restart: unless-stopped
 
   # ---- TiTiler (dynamic raster COG tile server) ----

@@ -1,86 +1,144 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Atlanta Parcels</title>
-    <script src='https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js'></script>
-    <link href='https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css' rel='stylesheet' />
-    <style>
-        body { margin: 0; padding: 0; }
-        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
-    </style>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>US Parcels - Full Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
+  <style>
+    body { margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; }
+    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    .nav-bar {
+      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+      z-index: 10; display: flex; gap: 8px; background: rgba(15, 17, 23, 0.9);
+      padding: 6px 12px; border-radius: 8px; border: 1px solid #2e3241;
+    }
+    .nav-bar a, .nav-bar select {
+      font-size: 13px; color: #e4e6ef; text-decoration: none;
+      padding: 4px 10px; border-radius: 5px; border: 1px solid #2e3241;
+      background: transparent; cursor: pointer; font-family: inherit;
+    }
+    .nav-bar a:hover, .nav-bar select:hover { border-color: #6c63ff; }
+    .popup-content { font-size: 13px; line-height: 1.6; }
+    .popup-content strong { display: block; margin-bottom: 2px; }
+    .popup-content .label { color: #666; }
+  </style>
 </head>
 <body>
-    <div id="map"></div>
-    <script>
-        const map = new maplibregl.Map({
-            container: 'map',
-            style: {
-                version: 8,
-                sources: {
-                    'osm': {
-                        type: 'raster',
-                        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
-                        tileSize: 256,
-                        attribution: '© OpenStreetMap'
-                    },
-                    'parcels': {
-                        type: 'vector',
-                        tiles: ['http://localhost:3000/atlanta_downtown/{z}/{x}/{y}'],
-                        minzoom: 12,
-                        maxzoom: 16
-                    }
-                },
-                layers: [
-                    {
-                        id: 'osm',
-                        type: 'raster',
-                        source: 'osm'
-                    },
-                    {
-                        id: 'parcels-fill',
-                        type: 'fill',
-                        source: 'parcels',
-                        'source-layer': 'lr_parcel_us',
-                        paint: {
-                            'fill-color': '#0080ff',
-                            'fill-opacity': 0.5
-                        }
-                    },
-                    {
-                        id: 'parcels-outline',
-                        type: 'line',
-                        source: 'parcels',
-                        'source-layer': 'lr_parcel_us',
-                        paint: {
-                            'line-color': '#0040ff',
-                            'line-width': 1
-                        }
-                    }
-                ]
-            },
-            center: [-84.3857, 33.7545],
-            zoom: 14
-        });
 
-        map.addControl(new maplibregl.NavigationControl());
+<div class="nav-bar">
+  <a href="/">Dashboard</a>
+  <a href="/ingest.html">Extract & Ingest</a>
+  <select id="source-select">
+    <option value="postgis">PostGIS (normalized)</option>
+    <option value="pmtiles">PMTiles (atlanta)</option>
+  </select>
+</div>
 
-        // click to show parcel info
-        map.on('click', 'parcels-fill', (e) => {
-            const props = e.features[0].properties;
-            new maplibregl.Popup()
-                .setLngLat(e.lngLat)
-                .setHTML(`
-                    <strong>${props.parceladdr || 'No address'}</strong><br>
-                    Owner: ${props.ownername || 'Unknown'}<br>
-                    Value: ${props.totalvalue ? '$' + props.totalvalue.toLocaleString() : 'N/A'}
-                `)
-                .addTo(map);
-        });
+<div id="map"></div>
 
-        // cursor pointer on hover
-        map.on('mouseenter', 'parcels-fill', () => map.getCanvas().style.cursor = 'pointer');
-        map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
-    </script>
+<script>
+const SOURCES = {
+  postgis: {
+    id: 'parcels-postgis',
+    spec: { type: 'vector', tiles: ['http://localhost:3000/parcels/{z}/{x}/{y}'], minzoom: 12, maxzoom: 22 },
+    sourceLayer: 'parcels',
+    center: [-104.985, 39.740],
+    zoom: 14,
+    propMap: { addr: 'parcel_address', owner: 'owner_name', value: 'total_value', use: 'use_description' }
+  },
+  pmtiles: {
+    id: 'parcels-pmtiles',
+    spec: { type: 'vector', tiles: ['http://localhost:3000/atlanta/{z}/{x}/{y}'], minzoom: 12, maxzoom: 16 },
+    sourceLayer: 'atlanta_downtown',
+    center: [-84.3857, 33.7545],
+    zoom: 14,
+    propMap: { addr: 'parceladdr', owner: 'ownername', value: 'totalvalue', use: 'usedesc' }
+  }
+};
+
+let activeKey = 'postgis';
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '&copy; OpenStreetMap' }
+    },
+    layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+  },
+  center: SOURCES.postgis.center,
+  zoom: SOURCES.postgis.zoom
+});
+
+map.addControl(new maplibregl.NavigationControl());
+
+function addParcelLayer(key) {
+  const cfg = SOURCES[key];
+  if (!map.getSource(cfg.id)) map.addSource(cfg.id, cfg.spec);
+
+  map.addLayer({
+    id: 'parcels-fill', type: 'fill', source: cfg.id,
+    'source-layer': cfg.sourceLayer, minzoom: 12,
+    paint: {
+      'fill-color': ['case',
+        ['has', cfg.propMap.value],
+        ['interpolate', ['linear'], ['get', cfg.propMap.value],
+          0, '#2563eb', 500000, '#6c63ff', 2000000, '#f59e0b', 10000000, '#ef4444'],
+        '#6c63ff'
+      ],
+      'fill-opacity': 0.45
+    }
+  });
+
+  map.addLayer({
+    id: 'parcels-outline', type: 'line', source: cfg.id,
+    'source-layer': cfg.sourceLayer, minzoom: 13,
+    paint: { 'line-color': '#4f46e5', 'line-width': 1 }
+  });
+
+  activeKey = key;
+}
+
+function removeParcelLayer() {
+  ['parcels-fill', 'parcels-outline'].forEach(id => {
+    if (map.getLayer(id)) map.removeLayer(id);
+  });
+}
+
+map.on('load', () => addParcelLayer('postgis'));
+
+document.getElementById('source-select').addEventListener('change', (e) => {
+  const key = e.target.value;
+  removeParcelLayer();
+  addParcelLayer(key);
+  const cfg = SOURCES[key];
+  map.flyTo({ center: cfg.center, zoom: cfg.zoom });
+});
+
+map.on('click', 'parcels-fill', (e) => {
+  if (!e.features || !e.features.length) return;
+  const p = e.features[0].properties;
+  const pm = SOURCES[activeKey].propMap;
+  const addr = p[pm.addr] || 'No address';
+  const owner = p[pm.owner] || 'Unknown';
+  const val = p[pm.value] ? '$' + Number(p[pm.value]).toLocaleString() : 'N/A';
+  const use = p[pm.use] || 'N/A';
+  new maplibregl.Popup()
+    .setLngLat(e.lngLat)
+    .setHTML(`<div class="popup-content">
+      <strong>${addr}</strong>
+      <span class="label">Owner:</span> ${owner}<br>
+      <span class="label">Value:</span> ${val}<br>
+      <span class="label">Use:</span> ${use}
+    </div>`)
+    .addTo(map);
+});
+
+map.on('mouseenter', 'parcels-fill', () => map.getCanvas().style.cursor = 'pointer');
+map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
+</script>
 </body>
 </html>

@@ -6,95 +6,11 @@
   <title>US Parcels - Extract & Ingest</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-  <link rel="stylesheet" href="https://unpkg.com/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.css">
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="https://unpkg.com/@mapbox/mapbox-gl-draw@1.4.3/dist/mapbox-gl-draw.js"></script>
-  <style>
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-    :root {
-      --bg: #0f1117; --surface: #1a1d27; --surface-hover: #242836;
-      --border: #2e3241; --text: #e4e6ef; --text-muted: #8b8fa3;
-      --accent: #6c63ff; --green: #34d399; --red: #f87171; --yellow: #fbbf24;
-      --radius: 10px;
-    }
-    body { font-family: 'Inter', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
-
-    header {
-      border-bottom: 1px solid var(--border); padding: 1rem 2rem;
-      display: flex; align-items: center; justify-content: space-between;
-    }
-    header h1 { font-size: 1.1rem; font-weight: 700; }
-    header h1 span { color: var(--accent); }
-    header nav { display: flex; gap: 0.75rem; }
-    header nav a {
-      font-size: 0.8rem; color: var(--text-muted); text-decoration: none;
-      padding: 0.3rem 0.6rem; border-radius: 6px; border: 1px solid var(--border);
-    }
-    header nav a:hover { color: var(--text); border-color: var(--accent); }
-
-    .layout { display: flex; height: calc(100vh - 56px); }
-    .sidebar {
-      width: 360px; min-width: 360px; padding: 1.25rem; overflow-y: auto;
-      border-right: 1px solid var(--border); display: flex; flex-direction: column; gap: 1rem;
-    }
-    .map-pane { flex: 1; position: relative; }
-    .map-pane .maplibregl-map { width: 100%; height: 100%; }
-
-    .section-label {
-      font-size: 0.7rem; font-weight: 600; letter-spacing: 0.08em;
-      text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.4rem;
-    }
-
-    .field { display: flex; flex-direction: column; gap: 0.25rem; }
-    .field label { font-size: 0.78rem; color: var(--text-muted); }
-    .field input, .field select {
-      font-family: inherit; font-size: 0.85rem; padding: 0.45rem 0.7rem;
-      border-radius: 6px; border: 1px solid var(--border);
-      background: var(--bg); color: var(--text);
-    }
-
-    .checkbox-row {
-      display: flex; align-items: center; gap: 0.5rem;
-      font-size: 0.82rem; color: var(--text-muted);
-    }
-    .checkbox-row input[type="checkbox"] { accent-color: var(--accent); }
-
-    .bbox-display {
-      font-family: 'Courier New', monospace; font-size: 0.78rem;
-      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-      padding: 0.5rem 0.7rem; color: var(--text-muted);
-      min-height: 2rem; word-break: break-all;
-    }
-
-    .btn {
-      font-family: inherit; font-size: 0.85rem; font-weight: 600;
-      padding: 0.6rem 1rem; border-radius: 8px; border: none; cursor: pointer;
-      display: flex; align-items: center; justify-content: center; gap: 0.4rem;
-      transition: background 0.12s;
-    }
-    .btn-primary { background: var(--accent); color: #fff; }
-    .btn-primary:hover { background: #5b52e6; }
-    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
-    .btn-secondary {
-      background: transparent; color: var(--text); border: 1px solid var(--border);
-    }
-    .btn-secondary:hover { border-color: var(--accent); }
-
-    .job-log {
-      background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
-      padding: 0.6rem 0.7rem; font-family: 'Courier New', monospace; font-size: 0.75rem;
-      color: var(--text-muted); max-height: 200px; overflow-y: auto; line-height: 1.6;
-    }
-    .job-log .done { color: var(--green); }
-    .job-log .err { color: var(--red); }
-
-    .hint {
-      font-size: 0.75rem; color: var(--text-muted); line-height: 1.5;
-      padding: 0.5rem 0.7rem; background: var(--surface); border-radius: 6px;
-      border-left: 3px solid var(--accent);
-    }
-  </style>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@watergis/maplibre-gl-terradraw@1.12.1/dist/maplibre-gl-terradraw.css">
+  <script src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@watergis/maplibre-gl-terradraw@1.12.1/dist/maplibre-gl-terradraw.umd.js"></script>
+  <link rel="stylesheet" href="config/ingest.css">
 </head>
 <body>
 
@@ -103,25 +19,35 @@
   <nav>
     <a href="/">Dashboard</a>
     <a href="/map.html">Full Map</a>
-    <a href="http://localhost:8888" target="_blank">Style Editor</a>
   </nav>
 </header>
 
 <div class="layout">
   <div class="sidebar">
     <div class="hint">
-      Draw a rectangle on the map to define the extraction area.
-      Keep it reasonable -- city/county scale extracts are fast, state-scale takes minutes.
+      Use the <strong>rectangle</strong> tool on the map to define an extraction area,
+      or enter coordinates manually. The API extracts from the source GPKG and loads into PostGIS.
     </div>
 
     <div>
       <div class="section-label">Bounding Box</div>
       <div class="bbox-display" id="bbox-display">Draw a rectangle on the map...</div>
+      <div class="bbox-inputs">
+        <div class="bbox-row">
+          <label>W</label><input type="number" id="bbox-w" step="0.001" placeholder="-104.99">
+          <label>S</label><input type="number" id="bbox-s" step="0.001" placeholder="39.73">
+        </div>
+        <div class="bbox-row">
+          <label>E</label><input type="number" id="bbox-e" step="0.001" placeholder="-104.97">
+          <label>N</label><input type="number" id="bbox-n" step="0.001" placeholder="39.75">
+        </div>
+        <button class="btn btn-small" id="btn-apply-bbox">Apply manual bbox</button>
+      </div>
     </div>
 
     <div class="field">
       <label>Extract Name</label>
-      <input type="text" id="extract-name" placeholder="e.g. denver_downtown" />
+      <input type="text" id="extract-name" placeholder="e.g. denver_downtown">
     </div>
 
     <div>
@@ -137,14 +63,23 @@
 
     <div class="field">
       <label>Simplification (optional, degrees)</label>
-      <input type="number" id="simplify" placeholder="e.g. 0.0001" step="0.00001" min="0" />
+      <input type="number" id="simplify" placeholder="e.g. 0.0001" step="0.00001" min="0">
     </div>
 
-    <button class="btn btn-primary" id="btn-extract" disabled>Extract</button>
+    <button class="btn btn-primary" id="btn-extract" disabled>Extract Parcels</button>
 
     <div id="job-section" style="display:none;">
       <div class="section-label">Job Log</div>
       <div class="job-log" id="job-log"></div>
+    </div>
+
+    <div>
+      <div class="section-label">Existing Extracts</div>
+      <div class="extracts-list" id="extracts-list">loading...</div>
+    </div>
+
+    <div class="api-status" id="api-status">
+      checking ingest API...
     </div>
   </div>
 
@@ -154,83 +89,148 @@
 </div>
 
 <script>
-const API_BASE = 'http://localhost:8001';
+const API_BASE = '/api';
 
 const map = new maplibregl.Map({
   container: 'map',
   style: {
     version: 8,
     sources: {
-      osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '&copy; OpenStreetMap' },
-      parcels: { type: 'vector', tiles: ['http://localhost:3000/parcel_raw/{z}/{x}/{y}'], minzoom: 0, maxzoom: 22 }
+      osm: {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap'
+      },
+      parcels: {
+        type: 'vector',
+        tiles: ['/tiles/parcels/{z}/{x}/{y}'],
+        minzoom: 0,
+        maxzoom: 22
+      }
     },
     layers: [
       { id: 'osm', type: 'raster', source: 'osm' },
-      { id: 'parcels-fill', type: 'fill', source: 'parcels', 'source-layer': 'parcel_raw', minzoom: 12,
-        paint: { 'fill-color': '#6c63ff', 'fill-opacity': 0.3 } },
-      { id: 'parcels-outline', type: 'line', source: 'parcels', 'source-layer': 'parcel_raw', minzoom: 13,
-        paint: { 'line-color': '#4f46e5', 'line-width': 0.5 } }
+      {
+        id: 'parcels-fill', type: 'fill', source: 'parcels',
+        'source-layer': 'parcels', minzoom: 12,
+        paint: { 'fill-color': '#6c63ff', 'fill-opacity': 0.25 }
+      },
+      {
+        id: 'parcels-outline', type: 'line', source: 'parcels',
+        'source-layer': 'parcels', minzoom: 13,
+        paint: { 'line-color': '#4f46e5', 'line-width': 0.5 }
+      }
     ]
   },
   center: [-98.5, 39.8],
   zoom: 4
 });
-map.addControl(new maplibregl.NavigationControl());
 
-const draw = new MapboxDraw({
-  displayControlsDefault: false,
-  controls: { polygon: false, trash: true },
-  modes: {
-    ...MapboxDraw.modes,
-    draw_rectangle: MapboxDraw.modes.draw_polygon
-  }
+map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+// terra draw with only rectangle + select + delete
+const drawControl = new MaplibreTerradrawControl.MaplibreTerradrawControl({
+  modes: ['rectangle', 'select', 'delete'],
+  open: true
 });
-map.addControl(draw, 'top-left');
+map.addControl(drawControl, 'top-left');
 
-// custom rectangle draw button
-const rectBtn = document.createElement('button');
-rectBtn.className = 'mapbox-gl-draw_ctrl-draw-btn';
-rectBtn.title = 'Draw rectangle';
-rectBtn.textContent = '▭';
-rectBtn.style.cssText = 'font-size:18px; line-height:29px;';
-rectBtn.onclick = () => {
-  draw.deleteAll();
-  draw.changeMode('draw_polygon');
-};
-
-map.on('load', () => {
-  const drawControls = document.querySelector('.mapboxgl-ctrl-group.mapbox-gl-draw_ctrl-draw-btn')?.parentElement;
-  if (drawControls) drawControls.prepend(rectBtn);
+// parcel click popup
+map.on('click', 'parcels-fill', (e) => {
+  if (!e.features || !e.features.length) return;
+  const p = e.features[0].properties;
+  const html = `<div style="font-size:13px;line-height:1.5;">
+    <strong>${p.parcel_address || p.parceladdr || 'No address'}</strong><br>
+    Owner: ${p.owner_name || p.ownername || 'Unknown'}<br>
+    Value: ${p.total_value || p.totalvalue ? '$' + Number(p.total_value || p.totalvalue).toLocaleString() : 'N/A'}<br>
+    Use: ${p.use_description || p.usedesc || 'N/A'}
+  </div>`;
+  new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
 });
+map.on('mouseenter', 'parcels-fill', () => map.getCanvas().style.cursor = 'pointer');
+map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
 
+// bbox state
 let currentBbox = null;
+let bboxLayer = null;
 
-function updateBbox() {
-  const features = draw.getAll();
-  if (!features.features.length) {
-    currentBbox = null;
-    document.getElementById('bbox-display').textContent = 'Draw a rectangle on the map...';
-    document.getElementById('btn-extract').disabled = true;
-    return;
-  }
-  const coords = features.features[0].geometry.coordinates[0];
-  const lngs = coords.map(c => c[0]);
-  const lats = coords.map(c => c[1]);
-  currentBbox = [
-    Math.min(...lngs).toFixed(6),
-    Math.min(...lats).toFixed(6),
-    Math.max(...lngs).toFixed(6),
-    Math.max(...lats).toFixed(6)
-  ].map(Number);
-
-  document.getElementById('bbox-display').textContent =
-    `[${currentBbox[0]}, ${currentBbox[1]}, ${currentBbox[2]}, ${currentBbox[3]}]`;
+function setBbox(bbox) {
+  currentBbox = bbox;
+  const display = document.getElementById('bbox-display');
+  display.textContent = `[${bbox[0].toFixed(6)}, ${bbox[1].toFixed(6)}, ${bbox[2].toFixed(6)}, ${bbox[3].toFixed(6)}]`;
   document.getElementById('btn-extract').disabled = false;
+
+  document.getElementById('bbox-w').value = bbox[0].toFixed(6);
+  document.getElementById('bbox-s').value = bbox[1].toFixed(6);
+  document.getElementById('bbox-e').value = bbox[2].toFixed(6);
+  document.getElementById('bbox-n').value = bbox[3].toFixed(6);
+
+  showBboxOutline(bbox);
 }
 
-map.on('draw.create', updateBbox);
-map.on('draw.update', updateBbox);
-map.on('draw.delete', updateBbox);
+function showBboxOutline(bbox) {
+  const geojson = {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [[
+        [bbox[0], bbox[1]], [bbox[2], bbox[1]],
+        [bbox[2], bbox[3]], [bbox[0], bbox[3]],
+        [bbox[0], bbox[1]]
+      ]]
+    }
+  };
+
+  if (map.getSource('bbox-outline')) {
+    map.getSource('bbox-outline').setData(geojson);
+  } else {
+    map.addSource('bbox-outline', { type: 'geojson', data: geojson });
+    map.addLayer({
+      id: 'bbox-fill', type: 'fill', source: 'bbox-outline',
+      paint: { 'fill-color': '#fbbf24', 'fill-opacity': 0.1 }
+    });
+    map.addLayer({
+      id: 'bbox-line', type: 'line', source: 'bbox-outline',
+      paint: { 'line-color': '#fbbf24', 'line-width': 2, 'line-dasharray': [3, 2] }
+    });
+  }
+}
+
+// listen for terra draw finish events
+map.on('load', () => {
+  const terraDraw = drawControl.getTerraDrawInstance();
+  if (terraDraw) {
+    terraDraw.on('finish', (id) => {
+      const snapshot = terraDraw.getSnapshot();
+      const feature = snapshot.find(f => f.id === id);
+      if (feature && feature.geometry.type === 'Polygon') {
+        const coords = feature.geometry.coordinates[0];
+        const lngs = coords.map(c => c[0]);
+        const lats = coords.map(c => c[1]);
+        const bbox = [
+          Math.min(...lngs), Math.min(...lats),
+          Math.max(...lngs), Math.max(...lats)
+        ];
+        setBbox(bbox);
+      }
+    });
+  }
+});
+
+// manual bbox apply
+document.getElementById('btn-apply-bbox').addEventListener('click', () => {
+  const w = parseFloat(document.getElementById('bbox-w').value);
+  const s = parseFloat(document.getElementById('bbox-s').value);
+  const e = parseFloat(document.getElementById('bbox-e').value);
+  const n = parseFloat(document.getElementById('bbox-n').value);
+  if (isNaN(w) || isNaN(s) || isNaN(e) || isNaN(n)) {
+    alert('Enter all four bbox values');
+    return;
+  }
+  setBbox([w, s, e, n]);
+  map.fitBounds([[w, s], [e, n]], { padding: 40 });
+});
 
 // extract
 document.getElementById('btn-extract').addEventListener('click', async () => {
@@ -256,7 +256,7 @@ document.getElementById('btn-extract').addEventListener('click', async () => {
   document.getElementById('btn-extract').disabled = true;
   document.getElementById('job-section').style.display = 'block';
   const logEl = document.getElementById('job-log');
-  logEl.innerHTML = '<div>submitting...</div>';
+  logEl.innerHTML = '<div>submitting extraction request...</div>';
 
   try {
     const res = await fetch(`${API_BASE}/extract`, {
@@ -266,7 +266,8 @@ document.getElementById('btn-extract').addEventListener('click', async () => {
     });
 
     if (!res.ok) {
-      logEl.innerHTML = `<div class="err">API error: ${res.status}</div>`;
+      const errText = await res.text();
+      logEl.innerHTML = `<div class="err">API error ${res.status}: ${errText}</div>`;
       document.getElementById('btn-extract').disabled = false;
       return;
     }
@@ -279,7 +280,8 @@ document.getElementById('btn-extract').addEventListener('click', async () => {
         const r = await fetch(`${API_BASE}/jobs/${job.id}`);
         const j = await r.json();
         logEl.innerHTML = j.log.map(l => {
-          const cls = l.startsWith('error') || l.startsWith('exception') ? 'err' : l === 'done' ? 'done' : '';
+          const cls = l.startsWith('error') || l.startsWith('exception') ? 'err'
+            : l === 'done' ? 'done' : '';
           return `<div class="${cls}">${l}</div>`;
         }).join('');
         logEl.scrollTop = logEl.scrollHeight;
@@ -288,17 +290,58 @@ document.getElementById('btn-extract').addEventListener('click', async () => {
           clearInterval(poll);
           document.getElementById('btn-extract').disabled = false;
           if (j.status === 'completed') {
-            logEl.innerHTML += '<div class="done">extraction complete -- reload map to see new data</div>';
+            logEl.innerHTML += '<div class="done">extraction complete</div>';
+            loadExtracts();
           }
         }
       } catch { /* keep polling */ }
     }, 2000);
 
   } catch (err) {
-    logEl.innerHTML = `<div class="err">connection error: ${err.message}</div><div>is the ingest-api running? start with: docker compose --profile ingest up -d</div>`;
+    logEl.innerHTML = `<div class="err">connection error: ${err.message}</div>
+      <div>start the ingest API: docker compose --profile ingest up -d</div>`;
     document.getElementById('btn-extract').disabled = false;
   }
 });
+
+// load existing extracts
+async function loadExtracts() {
+  const el = document.getElementById('extracts-list');
+  try {
+    const res = await fetch(`${API_BASE}/data`);
+    if (!res.ok) throw new Error(`${res.status}`);
+    const files = await res.json();
+    if (!files.length) {
+      el.textContent = 'No extracts yet';
+      return;
+    }
+    el.innerHTML = files.map(f =>
+      `<div class="extract-item">
+        <span class="extract-name">${f.name}</span>
+        <span class="extract-meta">${f.format} &middot; ${f.size_mb} MB</span>
+      </div>`
+    ).join('');
+  } catch {
+    el.textContent = 'API offline';
+  }
+}
+
+// api health check
+async function checkApi() {
+  const el = document.getElementById('api-status');
+  try {
+    const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+    if (!res.ok) throw new Error();
+    const data = await res.json();
+    el.className = 'api-status api-ok';
+    el.textContent = `Ingest API: healthy${data.gpkg_available ? ' (GPKG available)' : ' (GPKG not found)'}`;
+    loadExtracts();
+  } catch {
+    el.className = 'api-status api-err';
+    el.textContent = 'Ingest API: offline -- start with docker compose --profile ingest up -d';
+  }
+}
+checkApi();
 </script>
 </body>
 </html>

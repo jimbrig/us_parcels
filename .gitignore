@@ -28,6 +28,9 @@ data/**
 .pixi/
 pixi.lock
 
+# ---- node / bun ----
+node_modules/
+
 # ---- python ----
 __pycache__/
 *.pyc

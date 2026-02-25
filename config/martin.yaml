@@ -1,0 +1,89 @@
+# martin tile server configuration
+# docs: https://maplibre.org/martin/config-file.html
+
+listen_addresses: "0.0.0.0:3000"
+
+# enable built-in web UI
+webui:
+  enable_for_all: true
+
+postgres:
+  connection_string: postgresql://${POSTGRES_USER:-parcels}:${POSTGRES_PASSWORD:-parcels}@postgis:5432/${POSTGRES_DB:-parcels}
+
+  # only expose specific tables/views, with cleaner source IDs
+  tables:
+    parcels:
+      schema: parcels
+      table: parcel
+      geometry_column: geom
+      srid: 4326
+      geometry_type: MULTIPOLYGON
+      bounds: [-180, -90, 180, 90]
+      properties:
+        id: bigint
+        parcel_id: text
+        geoid: text
+        parcel_address: text
+        parcel_city: text
+        parcel_state: text
+        owner_name: text
+        total_value: bigint
+        year_built: smallint
+        use_description: text
+        sale_amount: bigint
+        assessed_acres: numeric
+
+    parcel-centroids:
+      schema: parcels
+      table: parcel
+      geometry_column: centroid
+      srid: 4326
+      geometry_type: POINT
+      properties:
+        id: bigint
+        parcel_id: text
+        geoid: text
+        total_value: bigint
+
+    parcel-raw:
+      schema: parcels
+      table: parcel_raw
+      geometry_column: geom
+      srid: 4326
+      geometry_type: MULTIPOLYGON
+
+    # TIGER tables use SRID 4269 (NAD83) -- serve with correct SRID
+    tiger-states:
+      schema: tiger
+      table: state
+      geometry_column: the_geom
+      srid: 4269
+      properties:
+        statefp: text
+        name: text
+        stusps: text
+
+    # tiger-counties and tiger-tracts need spatial indexes before serving
+    # run: CREATE INDEX idx_county_geom ON tiger.county USING gist(the_geom);
+    # then re-add them here
+
+# pmtiles file sources
+pmtiles:
+  paths:
+    - /pmtiles
+  sources:
+    atlanta: /pmtiles/atlanta_downtown.pmtiles
+
+# serve MapLibre style files from /config/styles
+styles:
+  paths:
+    - /config/styles
+
+# serve fonts from /config/fonts
+fonts:
+  - /config/fonts
+
+# serve sprites from /config/sprites
+sprites:
+  paths:
+    - /config/sprites

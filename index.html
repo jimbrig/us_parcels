@@ -334,8 +334,8 @@
     <div class="section-title">Map Preview</div>
     <div class="map-toolbar">
       <select id="layer-select">
+        <option value="postgis">PostGIS &mdash; parcels.parcel (normalized)</option>
         <option value="pmtiles">PMTiles &mdash; atlanta_downtown</option>
-        <option value="postgis">PostGIS &mdash; parcels.parcel_raw</option>
       </select>
       <a class="btn" href="map.html" target="_blank">Open full map</a>
     </div>
@@ -390,6 +390,14 @@
     <div class="conn-row">
       <span class="conn-label">Docker network</span>
       <code class="conn-value">postgresql://parcels:parcels@postgis:5432/parcels</code>
+    </div>
+    <div class="conn-row">
+      <span class="conn-label">MinIO S3</span>
+      <code class="conn-value">s3://geodata/geoparquet/*.parquet (endpoint: localhost:9000)</code>
+    </div>
+    <div class="conn-row">
+      <span class="conn-label">DuckDB</span>
+      <code class="conn-value">uv run --with duckdb scripts/query_minio.py</code>
     </div>
   </div>
 </main>
@@ -459,6 +467,19 @@ const SERVICES = [
     links: [
       { label: 'Console', href: 'http://localhost:9001' }
     ]
+  },
+  {
+    name: 'Ingest API',
+    desc: 'FastAPI service for extracting parcels from GPKG by bounding box, loading into PostGIS, and exporting to GeoParquet/PMTiles/FlatGeoBuf.',
+    port: 8001,
+    primaryUrl: 'http://localhost:8001/docs',
+    healthUrl: 'http://localhost:8001/health',
+    links: [
+      { label: 'Docs', href: 'http://localhost:8001/docs' },
+      { label: 'Jobs', href: 'http://localhost:8001/jobs' },
+      { label: 'Data', href: 'http://localhost:8001/data' }
+    ],
+    profile: 'ingest'
   },
   {
     name: 'TiTiler',
@@ -551,7 +572,7 @@ const map = new maplibregl.Map({
     },
     layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
   },
-  center: [-84.3857, 33.7545],
+  center: [-104.985, 39.740],
   zoom: 14
 });
 
@@ -562,21 +583,21 @@ const LAYERS = {
     sourceId: 'parcels-pmtiles',
     source: {
       type: 'vector',
-      tiles: ['http://localhost:3000/atlanta_downtown/{z}/{x}/{y}'],
+      tiles: ['/tiles/atlanta/{z}/{x}/{y}'],
       minzoom: 12,
       maxzoom: 16
     },
-    sourceLayer: 'lr_parcel_us'
+    sourceLayer: 'atlanta_downtown'
   },
   postgis: {
     sourceId: 'parcels-postgis',
     source: {
       type: 'vector',
-      tiles: ['http://localhost:3000/parcel_raw/{z}/{x}/{y}'],
+      tiles: ['/tiles/parcels/{z}/{x}/{y}'],
       minzoom: 0,
       maxzoom: 22
     },
-    sourceLayer: 'parcel_raw'
+    sourceLayer: 'parcels'
   }
 };
 
@@ -614,7 +635,7 @@ function removeParcelLayers() {
   });
 }
 
-map.on('load', () => addParcelLayers('pmtiles'));
+map.on('load', () => addParcelLayers('postgis'));
 
 document.getElementById('layer-select').addEventListener('change', (e) => {
   removeParcelLayers();
@@ -640,7 +661,7 @@ map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
 async function loadDbStatus() {
   const body = document.getElementById('db-status-body');
   try {
-    const res = await fetch('http://localhost:9090/collections.json', { signal: AbortSignal.timeout(4000) });
+    const res = await fetch('/features/collections.json', { signal: AbortSignal.timeout(4000) });
     if (!res.ok) throw new Error('offline');
     const data = await res.json();
     const parcels = (data.collections || []).filter(c => c.id.startsWith('parcels.'));
@@ -654,7 +675,7 @@ async function loadDbStatus() {
       const extStr = ext ? `${ext[0].toFixed(2)}, ${ext[1].toFixed(2)} .. ${ext[2].toFixed(2)}, ${ext[3].toFixed(2)}` : '--';
       let countStr = '--';
       try {
-        const itemRes = await fetch(`http://localhost:9090/collections/${col.id}/items.json?limit=0`, { signal: AbortSignal.timeout(3000) });
+        const itemRes = await fetch(`/features/collections/${col.id}/items.json?limit=0`, { signal: AbortSignal.timeout(3000) });
         if (itemRes.ok) {
           const itemData = await itemRes.json();
           countStr = (itemData.numberMatched ?? '--').toLocaleString();
@@ -669,7 +690,7 @@ async function loadDbStatus() {
     }
     body.innerHTML = rows.join('');
   } catch {
-    body.innerHTML = '<tr><td colspan="4" style="color:var(--red)">Could not connect to pg_featureserv (:9000)</td></tr>';
+    body.innerHTML = '<tr><td colspan="4" style="color:var(--red)">Could not connect to pg_featureserv (:9090)</td></tr>';
   }
 }
 loadDbStatus();

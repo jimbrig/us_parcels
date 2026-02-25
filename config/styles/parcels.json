@@ -1,0 +1,148 @@
+{
+  "version": 8,
+  "name": "US Parcels",
+  "metadata": {
+    "maputnik:renderer": "mlgljs",
+    "description": "Parcel map style with value-based choropleth, TIGER boundaries, and labels"
+  },
+  "center": [-104.985, 39.74],
+  "zoom": 14,
+  "glyphs": "http://localhost:8080/tiles/font/{fontstack}/{range}",
+  "sources": {
+    "osm": {
+      "type": "raster",
+      "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      "tileSize": 256,
+      "attribution": "&copy; OpenStreetMap"
+    },
+    "parcels": {
+      "type": "vector",
+      "url": "http://localhost:8080/tiles/parcels"
+    },
+    "parcel-centroids": {
+      "type": "vector",
+      "url": "http://localhost:8080/tiles/parcel-centroids"
+    },
+    "tiger-states": {
+      "type": "vector",
+      "url": "http://localhost:8080/tiles/tiger-states"
+    },
+    "atlanta": {
+      "type": "vector",
+      "url": "http://localhost:8080/tiles/atlanta"
+    }
+  },
+  "layers": [
+    {
+      "id": "basemap",
+      "type": "raster",
+      "source": "osm"
+    },
+    {
+      "id": "state-boundaries",
+      "type": "line",
+      "source": "tiger-states",
+      "source-layer": "tiger-states",
+      "minzoom": 3,
+      "maxzoom": 10,
+      "paint": {
+        "line-color": "#94a3b8",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 3, 0.5, 8, 1.5],
+        "line-opacity": 0.6
+      }
+    },
+    {
+      "id": "state-labels",
+      "type": "symbol",
+      "source": "tiger-states",
+      "source-layer": "tiger-states",
+      "minzoom": 4,
+      "maxzoom": 8,
+      "layout": {
+        "text-field": ["get", "stusps"],
+        "text-font": ["Inter Variable Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 4, 10, 7, 16],
+        "text-transform": "uppercase",
+        "text-letter-spacing": 0.15
+      },
+      "paint": {
+        "text-color": "#64748b",
+        "text-halo-color": "rgba(255,255,255,0.8)",
+        "text-halo-width": 1.5
+      }
+    },
+    {
+      "id": "parcels-fill",
+      "type": "fill",
+      "source": "parcels",
+      "source-layer": "parcels",
+      "minzoom": 12,
+      "paint": {
+        "fill-color": [
+          "case",
+          ["has", "total_value"],
+          [
+            "interpolate", ["linear"],
+            ["get", "total_value"],
+            0, "#eff6ff",
+            100000, "#bfdbfe",
+            250000, "#60a5fa",
+            500000, "#2563eb",
+            1000000, "#7c3aed",
+            5000000, "#f59e0b",
+            20000000, "#ef4444"
+          ],
+          "#6c63ff"
+        ],
+        "fill-opacity": ["interpolate", ["linear"], ["zoom"], 12, 0.3, 15, 0.5, 18, 0.6]
+      }
+    },
+    {
+      "id": "parcels-outline",
+      "type": "line",
+      "source": "parcels",
+      "source-layer": "parcels",
+      "minzoom": 13,
+      "paint": {
+        "line-color": "#4338ca",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.3, 16, 1, 18, 1.5],
+        "line-opacity": ["interpolate", ["linear"], ["zoom"], 13, 0.4, 16, 0.8]
+      }
+    },
+    {
+      "id": "parcels-label",
+      "type": "symbol",
+      "source": "parcels",
+      "source-layer": "parcels",
+      "minzoom": 17,
+      "layout": {
+        "text-field": ["coalesce", ["get", "parcel_address"], ""],
+        "text-font": ["Inter Variable Regular"],
+        "text-size": ["interpolate", ["linear"], ["zoom"], 17, 9, 19, 12],
+        "text-anchor": "center",
+        "text-max-width": 8,
+        "text-allow-overlap": false
+      },
+      "paint": {
+        "text-color": "#1e1b4b",
+        "text-halo-color": "rgba(255,255,255,0.9)",
+        "text-halo-width": 1.5
+      }
+    },
+    {
+      "id": "centroids-circle",
+      "type": "circle",
+      "source": "parcel-centroids",
+      "source-layer": "parcel-centroids",
+      "minzoom": 8,
+      "maxzoom": 12,
+      "paint": {
+        "circle-radius": ["interpolate", ["linear"], ["zoom"], 8, 1, 11, 3],
+        "circle-color": "#6c63ff",
+        "circle-opacity": 0.6,
+        "circle-stroke-width": 0,
+        "circle-stroke-color": "#fff"
+      }
+    }
+  ]
+}
