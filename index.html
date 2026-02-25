@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>US Parcels - Services Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --surface-hover: #242836;
+      --border: #2e3241;
+      --text: #e4e6ef;
+      --text-muted: #8b8fa3;
+      --accent: #6c63ff;
+      --accent-soft: rgba(108, 99, 255, 0.12);
+      --green: #34d399;
+      --green-soft: rgba(52, 211, 153, 0.12);
+      --red: #f87171;
+      --red-soft: rgba(248, 113, 113, 0.12);
+      --yellow: #fbbf24;
+      --yellow-soft: rgba(251, 191, 36, 0.12);
+      --radius: 10px;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    header {
+      border-bottom: 1px solid var(--border);
+      padding: 1.25rem 2rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+    }
+
+    header h1 {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    header h1 span {
+      color: var(--accent);
+    }
+
+    .header-meta {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    main {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 2rem;
+    }
+
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-bottom: 2rem;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      transition: border-color 0.15s, background 0.15s;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .card:hover { border-color: var(--accent); background: var(--surface-hover); }
+
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .card-title {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+
+    .badge {
+      font-size: 0.7rem;
+      font-weight: 600;
+      padding: 0.15rem 0.5rem;
+      border-radius: 100px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .badge-green { background: var(--green-soft); color: var(--green); }
+    .badge-red { background: var(--red-soft); color: var(--red); }
+    .badge-yellow { background: var(--yellow-soft); color: var(--yellow); }
+
+    .card-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      flex: 1;
+    }
+
+    .card-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.5rem;
+    }
+
+    .card-port {
+      font-size: 0.8rem;
+      font-family: 'Courier New', monospace;
+      color: var(--text-muted);
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 0.4rem;
+    }
+
+    .btn {
+      font-family: inherit;
+      font-size: 0.78rem;
+      font-weight: 500;
+      padding: 0.35rem 0.75rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.12s, border-color 0.12s;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+    }
+
+    .btn:hover { background: var(--surface-hover); border-color: var(--accent); }
+
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: #5b52e6; }
+
+    .map-section {
+      margin-top: 0.5rem;
+    }
+
+    .map-container {
+      width: 100%;
+      height: 480px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      overflow: hidden;
+      position: relative;
+    }
+
+    .map-container .maplibregl-map { width: 100%; height: 100%; }
+
+    .map-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 0.75rem;
+    }
+
+    .map-toolbar select {
+      font-family: inherit;
+      font-size: 0.85rem;
+      padding: 0.4rem 0.75rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .conn-string {
+      margin-top: 2rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1rem 1.25rem;
+    }
+
+    .conn-string h3 {
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .conn-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .conn-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      min-width: 100px;
+      text-align: right;
+    }
+
+    .conn-value {
+      font-family: 'Courier New', monospace;
+      font-size: 0.82rem;
+      background: var(--bg);
+      padding: 0.25rem 0.6rem;
+      border-radius: 4px;
+      border: 1px solid var(--border);
+      user-select: all;
+    }
+
+    .popup-content strong { display: block; margin-bottom: 4px; }
+    .popup-content { font-size: 13px; line-height: 1.5; }
+
+    .card-title-link {
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      color: var(--text);
+      transition: color 0.12s;
+      background: none;
+      border: none;
+      padding: 0;
+      font-family: inherit;
+      text-align: left;
+    }
+    .card-title-link:hover { color: var(--accent); }
+
+    .arch-section { margin-top: 2rem; }
+
+    .arch-diagram {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      font-family: 'Courier New', monospace;
+      font-size: 0.78rem;
+      line-height: 1.7;
+      color: var(--text-muted);
+      overflow-x: auto;
+      white-space: pre;
+    }
+
+    .arch-diagram .hl { color: var(--accent); font-weight: 600; }
+    .arch-diagram .grn { color: var(--green); }
+    .arch-diagram .ylw { color: var(--yellow); }
+
+    .db-status {
+      margin-top: 2rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+    }
+
+    .db-status h3 { font-size: 0.85rem; font-weight: 600; margin-bottom: 0.75rem; }
+
+    .status-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+
+    .status-table th {
+      text-align: left;
+      color: var(--text-muted);
+      font-weight: 500;
+      padding: 0.4rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .status-table td {
+      padding: 0.4rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .status-table tr:last-child td { border-bottom: none; }
+    .status-table .mono { font-family: 'Courier New', monospace; }
+    .status-table .num { text-align: right; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1><span>US Parcels</span> Services Dashboard</h1>
+  <div class="header-meta">155M parcel records &middot; docker compose stack</div>
+</header>
+
+<main>
+  <div class="section-title">Services</div>
+  <div class="services-grid" id="services-grid"></div>
+
+  <div class="map-section">
+    <div class="section-title">Map Preview</div>
+    <div class="map-toolbar">
+      <select id="layer-select">
+        <option value="pmtiles">PMTiles &mdash; atlanta_downtown</option>
+        <option value="postgis">PostGIS &mdash; parcels.parcel_raw</option>
+      </select>
+      <a class="btn" href="map.html" target="_blank">Open full map</a>
+    </div>
+    <div class="map-container">
+      <div id="map"></div>
+    </div>
+  </div>
+
+  <div class="arch-section">
+    <div class="section-title">Architecture</div>
+    <div class="arch-diagram"><span class="ylw">Source GPKG</span> (155M parcels)
+    |
+    | <span class="grn">ogr2ogr -spat / -where</span>  (extract by state, county, or bbox)
+    v
+<span class="hl">PostGIS</span>  <-- central store, single source of truth
+    |
+    |--- <span class="hl">Martin</span> (:3000)       vector tiles from tables + PMTiles files
+    |--- <span class="hl">pg_tileserv</span> (:7800)  MVT tiles from tables & SQL functions
+    |--- <span class="hl">pg_featureserv</span> (:9090) OGC Features API (GeoJSON)
+    |
+    | <span class="grn">ogr2ogr / DuckDB</span>  (export derivatives)
+    v
+<span class="hl">MinIO S3</span> (:9000)  local object storage
+    |
+    +-- <span class="ylw">GeoParquet</span>  analytics, DuckDB/pandas/Arrow queries
+    +-- <span class="ylw">PMTiles</span>     static vector tile hosting (CDN/S3)
+    +-- <span class="ylw">FlatGeoBuf</span>  HTTP range-request serving</div>
+  </div>
+
+  <div class="db-status">
+    <h3>PostGIS Status</h3>
+    <table class="status-table" id="db-status-table">
+      <thead>
+        <tr><th>Table</th><th>Rows</th><th>Spatial Index</th><th>Extent</th></tr>
+      </thead>
+      <tbody id="db-status-body">
+        <tr><td colspan="4" style="color:var(--text-muted)">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="conn-string">
+    <h3>Connection Strings</h3>
+    <div class="conn-row">
+      <span class="conn-label">psql</span>
+      <code class="conn-value">psql -h localhost -p 5432 -U parcels -d parcels</code>
+    </div>
+    <div class="conn-row">
+      <span class="conn-label">PostgreSQL URI</span>
+      <code class="conn-value">postgresql://parcels:parcels@localhost:5432/parcels</code>
+    </div>
+    <div class="conn-row">
+      <span class="conn-label">Docker network</span>
+      <code class="conn-value">postgresql://parcels:parcels@postgis:5432/parcels</code>
+    </div>
+  </div>
+</main>
+
+<script>
+const SERVICES = [
+  {
+    name: 'PostGIS',
+    desc: 'PostgreSQL 17 + PostGIS 3.5. Tuned for bulk spatial workloads. Schema auto-initialized with parcels tables, views, and functions.',
+    port: 5432,
+    primaryUrl: null,
+    healthUrl: null,
+    links: [
+      { label: 'psql', action: 'copy', value: 'docker compose exec postgis psql -U parcels -d parcels' }
+    ]
+  },
+  {
+    name: 'Martin',
+    desc: 'Vector tile server. Serves PostGIS tables as MVT and PMTiles files from disk. Built-in web UI with tile inspector.',
+    port: 3000,
+    primaryUrl: 'http://localhost:3000',
+    healthUrl: 'http://localhost:3000/catalog',
+    links: [
+      { label: 'Dashboard', href: 'http://localhost:3000' },
+      { label: 'Catalog', href: 'http://localhost:3000/catalog' }
+    ]
+  },
+  {
+    name: 'pg_tileserv',
+    desc: 'Lightweight MVT tile server. Auto-discovers PostGIS tables and functions, serves as vector tiles with built-in preview UI.',
+    port: 7800,
+    primaryUrl: 'http://localhost:7800',
+    healthUrl: 'http://localhost:7800/index.json',
+    links: [
+      { label: 'UI', href: 'http://localhost:7800' },
+      { label: 'API', href: 'http://localhost:7800/index.json' }
+    ]
+  },
+  {
+    name: 'pg_featureserv',
+    desc: 'OGC Features API server. Auto-discovers PostGIS tables, views, and functions. Supports filtering, spatial queries, and GeoJSON output.',
+    port: 9090,
+    primaryUrl: 'http://localhost:9090',
+    healthUrl: 'http://localhost:9090/collections.json',
+    links: [
+      { label: 'UI', href: 'http://localhost:9090' },
+      { label: 'Collections', href: 'http://localhost:9090/collections.json' },
+      { label: 'Functions', href: 'http://localhost:9090/functions.json' }
+    ]
+  },
+  {
+    name: 'MinIO',
+    desc: 'S3-compatible object storage. Stores extracted GeoParquet, PMTiles, and FlatGeoBuf files. Query via DuckDB httpfs or GDAL /vsis3/.',
+    port: 9001,
+    primaryUrl: 'http://localhost:9001',
+    healthUrl: 'http://localhost:9000/minio/health/live',
+    links: [
+      { label: 'Console', href: 'http://localhost:9001' }
+    ]
+  },
+  {
+    name: 'TiTiler',
+    desc: 'Dynamic raster tile server for Cloud-Optimized GeoTIFFs. Requires --profile raster to start.',
+    port: 8000,
+    primaryUrl: 'http://localhost:8000/api.html',
+    healthUrl: 'http://localhost:8000/api',
+    links: [
+      { label: 'Docs', href: 'http://localhost:8000/api.html' }
+    ],
+    profile: 'raster'
+  }
+];
+
+function renderServices() {
+  const grid = document.getElementById('services-grid');
+  SERVICES.forEach((svc, i) => {
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.id = `svc-${i}`;
+
+    const badgeId = `badge-${i}`;
+    const linksHtml = svc.links.map(l => {
+      if (l.action === 'copy') {
+        return `<button class="btn" onclick="navigator.clipboard.writeText('${l.value}')" title="Copy command">${l.label}</button>`;
+      }
+      return `<button class="btn" onclick="window.open('${l.href}', '_blank', 'noopener')">${l.label}</button>`;
+    }).join('');
+
+    const titleHtml = svc.primaryUrl
+      ? `<button class="card-title-link" onclick="window.open('${svc.primaryUrl}', '_blank', 'noopener')" title="Open ${svc.name}">${svc.name}</button>`
+      : `<span class="card-title">${svc.name}</span>`;
+
+    card.innerHTML = `
+      <div class="card-header">
+        ${titleHtml}
+        <span class="badge badge-yellow" id="${badgeId}">checking</span>
+      </div>
+      <div class="card-desc">${svc.desc}${svc.profile ? `<br><code style="font-size:0.75rem;color:var(--accent)">--profile ${svc.profile}</code>` : ''}</div>
+      <div class="card-footer">
+        <span class="card-port">:${svc.port}</span>
+        <div class="card-actions">${linksHtml}</div>
+      </div>
+    `;
+    grid.appendChild(card);
+
+    checkHealth(svc, badgeId);
+  });
+}
+
+async function checkHealth(svc, badgeId) {
+  const badge = document.getElementById(badgeId);
+  if (!svc.healthUrl) {
+    badge.textContent = 'tcp';
+    badge.className = 'badge badge-green';
+    return;
+  }
+  try {
+    const res = await fetch(svc.healthUrl, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      badge.textContent = 'healthy';
+      badge.className = 'badge badge-green';
+    } else {
+      badge.textContent = 'error';
+      badge.className = 'badge badge-red';
+    }
+  } catch {
+    badge.textContent = 'offline';
+    badge.className = 'badge badge-red';
+  }
+}
+
+renderServices();
+setInterval(() => {
+  SERVICES.forEach((svc, i) => checkHealth(svc, `badge-${i}`));
+}, 15000);
+
+// ---- map ----
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    sources: {
+      osm: {
+        type: 'raster',
+        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+        tileSize: 256,
+        attribution: '&copy; OpenStreetMap'
+      }
+    },
+    layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+  },
+  center: [-84.3857, 33.7545],
+  zoom: 14
+});
+
+map.addControl(new maplibregl.NavigationControl());
+
+const LAYERS = {
+  pmtiles: {
+    sourceId: 'parcels-pmtiles',
+    source: {
+      type: 'vector',
+      tiles: ['http://localhost:3000/atlanta_downtown/{z}/{x}/{y}'],
+      minzoom: 12,
+      maxzoom: 16
+    },
+    sourceLayer: 'lr_parcel_us'
+  },
+  postgis: {
+    sourceId: 'parcels-postgis',
+    source: {
+      type: 'vector',
+      tiles: ['http://localhost:3000/parcel_raw/{z}/{x}/{y}'],
+      minzoom: 0,
+      maxzoom: 22
+    },
+    sourceLayer: 'parcel_raw'
+  }
+};
+
+let activeLayerKey = 'pmtiles';
+
+function addParcelLayers(key) {
+  const cfg = LAYERS[key];
+
+  if (!map.getSource(cfg.sourceId)) {
+    map.addSource(cfg.sourceId, cfg.source);
+  }
+
+  map.addLayer({
+    id: 'parcels-fill',
+    type: 'fill',
+    source: cfg.sourceId,
+    'source-layer': cfg.sourceLayer,
+    paint: { 'fill-color': '#6c63ff', 'fill-opacity': 0.45 }
+  });
+
+  map.addLayer({
+    id: 'parcels-outline',
+    type: 'line',
+    source: cfg.sourceId,
+    'source-layer': cfg.sourceLayer,
+    paint: { 'line-color': '#4f46e5', 'line-width': 1 }
+  });
+
+  activeLayerKey = key;
+}
+
+function removeParcelLayers() {
+  ['parcels-fill', 'parcels-outline'].forEach(id => {
+    if (map.getLayer(id)) map.removeLayer(id);
+  });
+}
+
+map.on('load', () => addParcelLayers('pmtiles'));
+
+document.getElementById('layer-select').addEventListener('change', (e) => {
+  removeParcelLayers();
+  addParcelLayers(e.target.value);
+});
+
+map.on('click', 'parcels-fill', (e) => {
+  if (!e.features.length) return;
+  const p = e.features[0].properties;
+  const html = `<div class="popup-content">
+    <strong>${p.parceladdr || p.parcel_address || 'No address'}</strong>
+    Owner: ${p.ownername || p.owner_name || 'Unknown'}<br>
+    Value: ${p.totalvalue || p.total_value ? '$' + Number(p.totalvalue || p.total_value).toLocaleString() : 'N/A'}<br>
+    Use: ${p.usedesc || p.use_description || 'N/A'}
+  </div>`;
+  new maplibregl.Popup().setLngLat(e.lngLat).setHTML(html).addTo(map);
+});
+
+map.on('mouseenter', 'parcels-fill', () => map.getCanvas().style.cursor = 'pointer');
+map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
+
+// ---- postgis status via pg_featureserv ----
+async function loadDbStatus() {
+  const body = document.getElementById('db-status-body');
+  try {
+    const res = await fetch('http://localhost:9090/collections.json', { signal: AbortSignal.timeout(4000) });
+    if (!res.ok) throw new Error('offline');
+    const data = await res.json();
+    const parcels = (data.collections || []).filter(c => c.id.startsWith('parcels.'));
+    if (!parcels.length) {
+      body.innerHTML = '<tr><td colspan="4" style="color:var(--text-muted)">No parcel tables found</td></tr>';
+      return;
+    }
+    const rows = [];
+    for (const col of parcels) {
+      const ext = col.extent?.spatial?.bbox?.[0];
+      const extStr = ext ? `${ext[0].toFixed(2)}, ${ext[1].toFixed(2)} .. ${ext[2].toFixed(2)}, ${ext[3].toFixed(2)}` : '--';
+      let countStr = '--';
+      try {
+        const itemRes = await fetch(`http://localhost:9090/collections/${col.id}/items.json?limit=0`, { signal: AbortSignal.timeout(3000) });
+        if (itemRes.ok) {
+          const itemData = await itemRes.json();
+          countStr = (itemData.numberMatched ?? '--').toLocaleString();
+        }
+      } catch {}
+      rows.push(`<tr>
+        <td class="mono">${col.id}</td>
+        <td class="num">${countStr}</td>
+        <td>${ext ? '<span style="color:var(--green)">gist</span>' : '--'}</td>
+        <td class="mono" style="font-size:0.75rem">${extStr}</td>
+      </tr>`);
+    }
+    body.innerHTML = rows.join('');
+  } catch {
+    body.innerHTML = '<tr><td colspan="4" style="color:var(--red)">Could not connect to pg_featureserv (:9000)</td></tr>';
+  }
+}
+loadDbStatus();
+</script>
+</body>
+</html>

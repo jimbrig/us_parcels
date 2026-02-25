@@ -1,0 +1,153 @@
+services:
+  # ---- PostGIS (PostgreSQL 17 + PostGIS 3.5) ----
+  postgis:
+    image: postgis/postgis:17-3.5
+    container_name: parcels-postgis
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-parcels}
+      POSTGRES_USER: ${POSTGRES_USER:-parcels}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-parcels}
+    ports:
+      - "${PG_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./scripts/postgis_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    shm_size: 1g
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - work_mem=64MB
+      - -c
+      - maintenance_work_mem=1GB
+      - -c
+      - effective_cache_size=2GB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - random_page_cost=1.1
+      - -c
+      - max_parallel_workers_per_gather=4
+    restart: unless-stopped
+
+  # ---- Martin (vector tiles from PostGIS tables + PMTiles files) ----
+  martin:
+    image: ghcr.io/maplibre/martin:latest
+    container_name: parcels-martin
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    volumes:
+      - ./data/pmtiles:/pmtiles:ro
+    command: >-
+      --webui enable-for-all
+      postgresql://${POSTGRES_USER:-parcels}:${POSTGRES_PASSWORD:-parcels}@postgis:5432/${POSTGRES_DB:-parcels}
+      /pmtiles
+    restart: unless-stopped
+
+  # ---- pg_tileserv (MVT tiles direct from PostGIS tables/functions) ----
+  pg-tileserv:
+    image: pramsey/pg_tileserv:latest
+    container_name: parcels-pg-tileserv
+    ports:
+      - "7800:7800"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-parcels}:${POSTGRES_PASSWORD:-parcels}@postgis:5432/${POSTGRES_DB:-parcels}
+    restart: unless-stopped
+
+  # ---- pg_featureserv (OGC Features API from PostGIS) ----
+  pg-featureserv:
+    image: pramsey/pg_featureserv:latest
+    container_name: parcels-pg-featureserv
+    ports:
+      - "9090:9000"
+    depends_on:
+      postgis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-parcels}:${POSTGRES_PASSWORD:-parcels}@postgis:5432/${POSTGRES_DB:-parcels}
+    restart: unless-stopped
+
+  # ---- MinIO (S3-compatible object storage) ----
+  minio:
+    image: quay.io/minio/minio:latest
+    container_name: parcels-minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    volumes:
+      - minio_data:/data
+    command: server /data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---- Dashboard + static file server (nginx) ----
+  web:
+    image: nginx:alpine
+    container_name: parcels-web
+    ports:
+      - "8080:80"
+    volumes:
+      - ./index.html:/usr/share/nginx/html/index.html:ro
+      - ./map.html:/usr/share/nginx/html/map.html:ro
+      - ./assets:/usr/share/nginx/html/assets:ro
+      - ./data:/usr/share/nginx/html/data:ro
+    restart: unless-stopped
+
+  # ---- TiTiler (dynamic raster COG tile server) ----
+  titiler:
+    image: ghcr.io/developmentseed/titiler:latest
+    container_name: parcels-titiler
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/data:ro
+    environment:
+      FORWARDED_ALLOW_IPS: "*"
+    profiles:
+      - raster
+    restart: unless-stopped
+
+  # ---- GDAL/OGR (ingestion toolkit, on-demand container) ----
+  gdal:
+    image: ghcr.io/osgeo/gdal:ubuntu-full-latest
+    container_name: parcels-gdal
+    profiles:
+      - tools
+    depends_on:
+      postgis:
+        condition: service_healthy
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    environment:
+      PGHOST: postgis
+      PGPORT: "5432"
+      PGDATABASE: ${POSTGRES_DB:-parcels}
+      PGUSER: ${POSTGRES_USER:-parcels}
+      PGPASSWORD: ${POSTGRES_PASSWORD:-parcels}
+      PG_USE_COPY: "YES"
+
+volumes:
+  pgdata:
+  minio_data:

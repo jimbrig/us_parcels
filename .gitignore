@@ -1,0 +1,56 @@
+# ---- large data files ----
+*.gpkg
+*.parquet
+*.fgb
+*.geojson
+*.pmtiles
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.tif
+*.tiff
+
+# data directory: ignore contents, keep structure via .gitkeep
+data/**
+!data/**/
+!data/**/.gitkeep
+
+# ---- secrets / environment ----
+.env
+.Renviron
+
+# ---- cursor (contains API keys in mcp.json) ----
+.cursor/
+
+# ---- pixi ----
+.pixi/
+pixi.lock
+
+# ---- python ----
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# ---- R ----
+.Rhistory
+.RData
+.Rproj.user/
+
+# ---- docker volumes ----
+pgdata/
+minio_data/
+
+# ---- IDE / OS ----
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# ---- generated / temp ----
+repomix.md
+*.log

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Atlanta Parcels</title>
+    <script src='https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js'></script>
+    <link href='https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css' rel='stylesheet' />
+    <style>
+        body { margin: 0; padding: 0; }
+        #map { position: absolute; top: 0; bottom: 0; width: 100%; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        const map = new maplibregl.Map({
+            container: 'map',
+            style: {
+                version: 8,
+                sources: {
+                    'osm': {
+                        type: 'raster',
+                        tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+                        tileSize: 256,
+                        attribution: '© OpenStreetMap'
+                    },
+                    'parcels': {
+                        type: 'vector',
+                        tiles: ['http://localhost:3000/atlanta_downtown/{z}/{x}/{y}'],
+                        minzoom: 12,
+                        maxzoom: 16
+                    }
+                },
+                layers: [
+                    {
+                        id: 'osm',
+                        type: 'raster',
+                        source: 'osm'
+                    },
+                    {
+                        id: 'parcels-fill',
+                        type: 'fill',
+                        source: 'parcels',
+                        'source-layer': 'lr_parcel_us',
+                        paint: {
+                            'fill-color': '#0080ff',
+                            'fill-opacity': 0.5
+                        }
+                    },
+                    {
+                        id: 'parcels-outline',
+                        type: 'line',
+                        source: 'parcels',
+                        'source-layer': 'lr_parcel_us',
+                        paint: {
+                            'line-color': '#0040ff',
+                            'line-width': 1
+                        }
+                    }
+                ]
+            },
+            center: [-84.3857, 33.7545],
+            zoom: 14
+        });
+
+        map.addControl(new maplibregl.NavigationControl());
+
+        // click to show parcel info
+        map.on('click', 'parcels-fill', (e) => {
+            const props = e.features[0].properties;
+            new maplibregl.Popup()
+                .setLngLat(e.lngLat)
+                .setHTML(`
+                    <strong>${props.parceladdr || 'No address'}</strong><br>
+                    Owner: ${props.ownername || 'Unknown'}<br>
+                    Value: ${props.totalvalue ? '$' + props.totalvalue.toLocaleString() : 'N/A'}
+                `)
+                .addTo(map);
+        });
+
+        // cursor pointer on hover
+        map.on('mouseenter', 'parcels-fill', () => map.getCanvas().style.cursor = 'pointer');
+        map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
+    </script>
+</body>
+</html>

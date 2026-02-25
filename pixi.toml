@@ -1,0 +1,44 @@
+[workspace]
+authors = ["Jimmy Briggs <jimmy.briggs@noclocks.dev>"]
+channels = ["conda-forge"]
+name = "us_parcels"
+platforms = ["win-64"]
+version = "0.1.0"
+
+# ---- docker lifecycle ----
+[tasks]
+up = "docker compose up -d"
+down = "docker compose down"
+logs = "docker compose logs -f"
+status = "docker compose ps"
+restart = "docker compose restart"
+
+# start with raster/tools profiles
+up-all = "docker compose --profile raster --profile tools up -d"
+
+# database
+psql = "docker compose exec postgis psql -U parcels -d parcels"
+
+# ingestion via Docker GDAL container (uses Docker network -> postgis:5432)
+ingest = { cmd = "docker compose --profile tools run --rm gdal bash scripts/ingest.sh", description = "Load a file into PostGIS via Docker GDAL" }
+
+# ingestion via PowerShell wrapper (more options: -Replace, -BuildIndex, -Layer)
+ingest-ps = { cmd = "powershell -File scripts/ingest_postgis.ps1", description = "Ingest via PowerShell wrapper script" }
+
+# build spatial indexes after bulk loading
+index = "docker compose exec postgis psql -U parcels -d parcels -c \"CREATE INDEX IF NOT EXISTS idx_parcel_raw_geom ON parcels.parcel_raw USING gist(geom);\""
+
+# wipe PostGIS volume and reinitialize
+reset-db = "docker compose down -v && docker compose up -d postgis"
+
+# ---- dependencies ----
+[dependencies]
+gdal = ">=3.12.1,<4"
+libgdal-arrow-parquet = ">=3.12.1,<4"
+proj = ">=9.7.1,<10"
+proj-data = ">=1.24,<2"
+duckdb = ">=1.4.3,<2"
+pandas = ">=2.3.3,<3"
+pyarrow = ">=19.0,<20"
+geopandas = ">=1.1,<2"
+psycopg2 = ">=2.9,<3"
