@@ -5,25 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>US Parcels - Full Map</title>
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="/config/map.css">
   <script src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
-  <style>
-    body { margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; }
-    #map { position: absolute; top: 0; bottom: 0; width: 100%; }
-    .nav-bar {
-      position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
-      z-index: 10; display: flex; gap: 8px; background: rgba(15, 17, 23, 0.9);
-      padding: 6px 12px; border-radius: 8px; border: 1px solid #2e3241;
-    }
-    .nav-bar a, .nav-bar select {
-      font-size: 13px; color: #e4e6ef; text-decoration: none;
-      padding: 4px 10px; border-radius: 5px; border: 1px solid #2e3241;
-      background: transparent; cursor: pointer; font-family: inherit;
-    }
-    .nav-bar a:hover, .nav-bar select:hover { border-color: #6c63ff; }
-    .popup-content { font-size: 13px; line-height: 1.6; }
-    .popup-content strong { display: block; margin-bottom: 2px; }
-    .popup-content .label { color: #666; }
-  </style>
+  <script src="/node_modules/pmtiles/dist/pmtiles.js"></script>
 </head>
 <body>
 
@@ -31,114 +15,203 @@
   <a href="/">Dashboard</a>
   <a href="/ingest.html">Extract & Ingest</a>
   <select id="source-select">
-    <option value="postgis">PostGIS (normalized)</option>
-    <option value="pmtiles">PMTiles (atlanta)</option>
+    <option value="showcase">Showcase (published artifact sample)</option>
+    <option value="postgis">PostGIS (working subset)</option>
+    <option value="pmtiles">PMTiles (local atlanta sample)</option>
+    <option value="pmtiles-minio">PMTiles (published MinIO GA)</option>
   </select>
 </div>
 
 <div id="map"></div>
+<div id="map-status" class="map-status" aria-live="polite"></div>
 
 <script>
-const SOURCES = {
-  postgis: {
-    id: 'parcels-postgis',
-    spec: { type: 'vector', tiles: ['http://localhost:3000/parcels/{z}/{x}/{y}'], minzoom: 12, maxzoom: 22 },
-    sourceLayer: 'parcels',
-    center: [-104.985, 39.740],
-    zoom: 14,
-    propMap: { addr: 'parcel_address', owner: 'owner_name', value: 'total_value', use: 'use_description' }
-  },
-  pmtiles: {
-    id: 'parcels-pmtiles',
-    spec: { type: 'vector', tiles: ['http://localhost:3000/atlanta/{z}/{x}/{y}'], minzoom: 12, maxzoom: 16 },
-    sourceLayer: 'atlanta_downtown',
-    center: [-84.3857, 33.7545],
-    zoom: 14,
-    propMap: { addr: 'parceladdr', owner: 'ownername', value: 'totalvalue', use: 'usedesc' }
-  }
-};
-
-let activeKey = 'postgis';
-
-const map = new maplibregl.Map({
-  container: 'map',
-  style: {
-    version: 8,
-    sources: {
-      osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '&copy; OpenStreetMap' }
+(function() {
+  const base = window.location.origin;
+  const SOURCES = {
+    showcase: {
+      id: 'parcels-showcase',
+      spec: { type: 'vector', url: `pmtiles://${base}/data/sample/showcase/parcels.pmtiles`, minzoom: 8, maxzoom: 16 },
+      sourceLayer: 'parcels',
+      center: [-84.3875, 33.7515],
+      zoom: 17,
+      fillMinzoom: 8,
+      propMap: { addr: 'parcel_address', owner: 'owner_name', value: 'total_value', use: 'use_description' }
     },
-    layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
-  },
-  center: SOURCES.postgis.center,
-  zoom: SOURCES.postgis.zoom
-});
+    postgis: {
+      id: 'parcels-postgis',
+      spec: { type: 'vector', tiles: [`${base}/tiles/parcels/{z}/{x}/{y}`], minzoom: 0, maxzoom: 22 },
+      sourceLayer: 'parcels',
+      center: [-104.985, 39.740],
+      zoom: 14,
+      fillMinzoom: 12,
+      propMap: { addr: 'parcel_address', owner: 'owner_name', value: 'total_value', use: 'use_description' }
+    },
+    pmtiles: {
+      id: 'parcels-pmtiles',
+      spec: { type: 'vector', tiles: [`${base}/tiles/atlanta/{z}/{x}/{y}`], minzoom: 12, maxzoom: 16 },
+      sourceLayer: 'atlanta_downtown',
+      center: [-84.3857, 33.7545],
+      zoom: 14,
+      fillMinzoom: 12,
+      propMap: { addr: 'parceladdr', owner: 'ownername', value: 'totalvalue', use: 'usedesc' }
+    },
+    'pmtiles-minio': {
+      id: 'parcels-pmtiles-minio',
+      spec: { type: 'vector', url: `pmtiles://${base}/s3/geodata/parcels/state=13/parcels.pmtiles`, minzoom: 8, maxzoom: 16 },
+      sourceLayer: 'parcels',
+      center: [-84.3857, 33.7545],
+      zoom: 14,
+      fillMinzoom: 8,
+      propMap: { addr: 'parcel_address', owner: 'owner_name', value: 'total_value', use: 'use_description' }
+    }
+  };
 
-map.addControl(new maplibregl.NavigationControl());
+  let activeKey = 'showcase';
+  let currentPopup = null;
 
-function addParcelLayer(key) {
-  const cfg = SOURCES[key];
-  if (!map.getSource(cfg.id)) map.addSource(cfg.id, cfg.spec);
+  if (typeof pmtiles !== 'undefined') {
+    const protocol = new pmtiles.Protocol();
+    maplibregl.addProtocol('pmtiles', protocol.tile);
+  }
 
-  map.addLayer({
-    id: 'parcels-fill', type: 'fill', source: cfg.id,
-    'source-layer': cfg.sourceLayer, minzoom: 12,
-    paint: {
-      'fill-color': ['case',
-        ['has', cfg.propMap.value],
-        ['interpolate', ['linear'], ['get', cfg.propMap.value],
-          0, '#2563eb', 500000, '#6c63ff', 2000000, '#f59e0b', 10000000, '#ef4444'],
-        '#6c63ff'
-      ],
-      'fill-opacity': 0.45
+  const map = new maplibregl.Map({
+    container: 'map',
+    style: {
+      version: 8,
+      sources: {
+        osm: { type: 'raster', tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], tileSize: 256, attribution: '&copy; OpenStreetMap' }
+      },
+      layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
+    },
+    center: SOURCES.showcase.center,
+    zoom: SOURCES.showcase.zoom
+  });
+
+  map.addControl(new maplibregl.NavigationControl());
+  map.addControl(new maplibregl.AttributionControl({ compact: true }));
+
+  function setStatus(msg, type) {
+    const el = document.getElementById('map-status');
+    el.textContent = msg;
+    el.className = 'map-status' + (type ? ' map-status-' + type : '');
+    if (msg) setTimeout(() => { el.textContent = ''; el.className = 'map-status'; }, 4000);
+  }
+
+  function addParcelLayer(key) {
+    const cfg = SOURCES[key];
+    const fillMinzoom = cfg.fillMinzoom ?? 12;
+
+    if (map.getSource(cfg.id)) {
+      map.removeSource(cfg.id);
+    }
+    map.addSource(cfg.id, cfg.spec);
+
+    map.addLayer({
+      id: 'parcels-fill', type: 'fill', source: cfg.id,
+      'source-layer': cfg.sourceLayer, minzoom: fillMinzoom,
+      paint: {
+        'fill-color': ['case',
+          ['has', cfg.propMap.value],
+          ['interpolate', ['linear'], ['get', cfg.propMap.value],
+            0, '#2563eb', 500000, '#6c63ff', 2000000, '#f59e0b', 10000000, '#ef4444'],
+          '#6c63ff'
+        ],
+        'fill-opacity': 0.5
+      }
+    });
+
+    map.addLayer({
+      id: 'parcels-outline', type: 'line', source: cfg.id,
+      'source-layer': cfg.sourceLayer, minzoom: fillMinzoom,
+      paint: { 'line-color': '#4f46e5', 'line-width': 1 }
+    });
+
+    activeKey = key;
+  }
+
+  function removeParcelLayer() {
+    ['parcels-fill', 'parcels-outline'].forEach(id => {
+      if (map.getLayer(id)) map.removeLayer(id);
+    });
+    ['parcels-showcase', 'parcels-postgis', 'parcels-pmtiles', 'parcels-pmtiles-minio'].forEach(id => {
+      if (map.getSource(id)) map.removeSource(id);
+    });
+  }
+
+  function showParcelPopup(lngLat, properties) {
+    if (currentPopup) currentPopup.remove();
+    const pm = SOURCES[activeKey].propMap;
+    const addr = properties[pm.addr] || 'No address';
+    const owner = properties[pm.owner] || 'Unknown';
+    const val = properties[pm.value] ? '$' + Number(properties[pm.value]).toLocaleString() : 'N/A';
+    const use = properties[pm.use] || 'N/A';
+    currentPopup = new maplibregl.Popup({ closeButton: true, closeOnClick: false })
+      .setLngLat(lngLat)
+      .setHTML(`<div class="popup-content">
+        <strong>${addr}</strong>
+        <span class="label">Owner:</span> ${owner}<br>
+        <span class="label">Value:</span> ${val}<br>
+        <span class="label">Use:</span> ${use}
+      </div>`)
+      .addTo(map);
+    currentPopup.on('close', () => { currentPopup = null; });
+  }
+
+  map.on('load', () => {
+    setStatus('Loading showcase...', 'loading');
+    addParcelLayer('showcase');
+    document.getElementById('source-select').value = 'showcase';
+    map.once('sourcedata', (e) => {
+      if (e.sourceId === 'parcels-showcase' && e.isSourceLoaded) {
+        setStatus('Showcase loaded. Click parcels for details.', 'success');
+      }
+    });
+  });
+
+  document.getElementById('source-select').addEventListener('change', (e) => {
+    const key = e.target.value;
+    setStatus('Loading ' + key + '...', 'loading');
+    removeParcelLayer();
+    try {
+      addParcelLayer(key);
+      const cfg = SOURCES[key];
+      map.flyTo({ center: cfg.center, zoom: cfg.zoom });
+      map.once('sourcedata', (e) => {
+        if (e.sourceId === cfg.id && e.isSourceLoaded) {
+          setStatus('Source loaded.', 'success');
+        }
+      });
+    } catch (err) {
+      setStatus('Failed to load source: ' + err.message, 'error');
     }
   });
 
-  map.addLayer({
-    id: 'parcels-outline', type: 'line', source: cfg.id,
-    'source-layer': cfg.sourceLayer, minzoom: 13,
-    paint: { 'line-color': '#4f46e5', 'line-width': 1 }
+  map.on('click', 'parcels-fill', (e) => {
+    if (!e.features || !e.features.length) return;
+    showParcelPopup(e.lngLat, e.features[0].properties);
   });
 
-  activeKey = key;
-}
+  map.on('mouseenter', 'parcels-fill', () => map.getCanvas().style.cursor = 'pointer');
+  map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
 
-function removeParcelLayer() {
-  ['parcels-fill', 'parcels-outline'].forEach(id => {
-    if (map.getLayer(id)) map.removeLayer(id);
-  });
-}
+  map.on('error', (e) => setStatus('Map error: ' + (e.error?.message || 'unknown'), 'error'));
 
-map.on('load', () => addParcelLayer('postgis'));
-
-document.getElementById('source-select').addEventListener('change', (e) => {
-  const key = e.target.value;
-  removeParcelLayer();
-  addParcelLayer(key);
-  const cfg = SOURCES[key];
-  map.flyTo({ center: cfg.center, zoom: cfg.zoom });
-});
-
-map.on('click', 'parcels-fill', (e) => {
-  if (!e.features || !e.features.length) return;
-  const p = e.features[0].properties;
-  const pm = SOURCES[activeKey].propMap;
-  const addr = p[pm.addr] || 'No address';
-  const owner = p[pm.owner] || 'Unknown';
-  const val = p[pm.value] ? '$' + Number(p[pm.value]).toLocaleString() : 'N/A';
-  const use = p[pm.use] || 'N/A';
-  new maplibregl.Popup()
-    .setLngLat(e.lngLat)
-    .setHTML(`<div class="popup-content">
-      <strong>${addr}</strong>
-      <span class="label">Owner:</span> ${owner}<br>
-      <span class="label">Value:</span> ${val}<br>
-      <span class="label">Use:</span> ${use}
-    </div>`)
-    .addTo(map);
-});
-
-map.on('mouseenter', 'parcels-fill', () => map.getCanvas().style.cursor = 'pointer');
-map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
+  if (new URLSearchParams(window.location.search).get('test') === '1') {
+    window.__parcelsMap = map;
+    window.__showParcelPopupForTest = () => {
+      showParcelPopup(
+        { lng: -84.3885, lat: 33.7515 },
+        {
+          parcel_address: '100 Peachtree St',
+          owner_name: 'Showcase Demo LLC',
+          total_value: 450000,
+          use_description: 'commercial'
+        }
+      );
+    };
+  }
+})();
 </script>
 </body>
 </html>

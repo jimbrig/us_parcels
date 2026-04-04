@@ -1,0 +1,80 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "SHOWCASE-001",
+        "geoid": "13121",
+        "parcel_address": "100 Peachtree St",
+        "owner_name": "Showcase Demo LLC",
+        "total_value": 450000,
+        "use_description": "commercial"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-84.389, 33.752], [-84.388, 33.752], [-84.388, 33.751], [-84.389, 33.751], [-84.389, 33.752]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "SHOWCASE-002",
+        "geoid": "13121",
+        "parcel_address": "102 Peachtree St",
+        "owner_name": "Demo Parcel Inc",
+        "total_value": 320000,
+        "use_description": "residential"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-84.388, 33.752], [-84.387, 33.752], [-84.387, 33.751], [-84.388, 33.751], [-84.388, 33.752]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "SHOWCASE-003",
+        "geoid": "13121",
+        "parcel_address": "104 Peachtree St",
+        "owner_name": "Cloud Pipeline Test",
+        "total_value": 180000,
+        "use_description": "vacant"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-84.387, 33.752], [-84.386, 33.752], [-84.386, 33.751], [-84.387, 33.751], [-84.387, 33.752]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "SHOWCASE-004",
+        "geoid": "13121",
+        "parcel_address": "106 Peachtree St",
+        "owner_name": "Hilbert Sort Demo",
+        "total_value": 890000,
+        "use_description": "mixed_use"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-84.389, 33.751], [-84.388, 33.751], [-84.388, 33.750], [-84.389, 33.750], [-84.389, 33.751]]]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "parcel_id": "SHOWCASE-005",
+        "geoid": "13121",
+        "parcel_address": "108 Peachtree St",
+        "owner_name": "PMTiles Verify",
+        "total_value": 210000,
+        "use_description": "residential"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [[[-84.388, 33.751], [-84.387, 33.751], [-84.387, 33.750], [-84.388, 33.750], [-84.388, 33.751]]]
+      }
+    }
+  ]
+}

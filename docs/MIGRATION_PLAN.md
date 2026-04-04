@@ -1,5 +1,7 @@
 # US Parcels Data Migration Plan
 
+This document is a migration-oriented planning artifact. It is not the canonical architecture or system-of-record definition. See `docs/ARCHITECTURE.md` and `docs/ADR/0001-system-of-record.md` for the normative model.
+
 ## Overview
 
 This document outlines the strategy for migrating 155M US parcel records from a local GeoPackage to:

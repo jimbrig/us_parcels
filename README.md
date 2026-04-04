@@ -1,164 +1,146 @@
 # US Parcels
 
-Geospatial data platform for 155 million US parcel records from [LandRecords.us](https://landrecords.us).
+Geospatial monorepo for working with 155M US parcel records from [LandRecords.us](https://landrecords.us).
 
-Two goals:
-1. **Data extraction** -- efficiently break down the monolithic 155M-record GPKG into usable, cloud-native formats (GeoParquet, PMTiles, FlatGeoBuf) and a centralized PostGIS store
-2. **Tooling showcase** -- demonstrate modern geospatial infrastructure (tile servers, feature APIs, object storage, DuckDB analytics) using real data
+## Architecture Summary
 
-## Architecture
+This repo uses a dual-path model:
 
+- PostGIS is the working surface for active subsets, normalization, search, local serving, and service-backed development.
+- GeoParquet, FlatGeoBuf, and PMTiles in object storage are the published artifact surface for analytics and delivery.
+
+```text
+GPKG (immutable raw input)
+  ├─ subset -> PostGIS -> Martin / pg_tileserv / pg_featureserv
+  └─ subset -> FGB -> GeoParquet + PMTiles -> object storage / frontend / DuckDB
 ```
-Source GPKG (155M parcels, local disk)
-    |
-    |  ogr2ogr -spat / -where  (extract by state, county, or bbox)
-    v
-PostGIS (:5432)  <-- central query store
-    |
-    |--- Martin (:3000)         vector tiles from tables + PMTiles files
-    |--- pg_tileserv (:7800)    MVT tiles from tables & SQL functions
-    |--- pg_featureserv (:9090) OGC Features API (GeoJSON)
-    |
-    |  ogr2ogr / DuckDB  (export derivatives)
-    v
-MinIO S3 (:9000)  local object storage
-    |
-    +-- GeoParquet   analytics via DuckDB/pandas/Arrow
-    +-- PMTiles      static vector tile hosting (CDN/S3)
-    +-- FlatGeoBuf   HTTP range-request serving
+
+For the authoritative version of that model, see:
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/ADR/0001-system-of-record.md](docs/ADR/0001-system-of-record.md)
+- [docs/DATA_CONTRACT.md](docs/DATA_CONTRACT.md)
+
+## Documentation Precedence
+
+Use docs in this order:
+
+1. `docs/ADR/`
+2. `docs/ARCHITECTURE.md`
+3. `docs/DATA_CONTRACT.md` and `docs/RUNBOOK.md`
+4. `README.md`
+5. `docs/chats/` as non-normative reference material
+
+## Task Surface
+
+- `pixi` is the canonical repo task surface.
+- `just` is a thin convenience wrapper around `pixi`.
+- `package.json` is reserved for frontend and Playwright tasks.
+
+Common commands:
+
+```powershell
+pixi run up
+pixi run showcase
+pixi run query-minio
+pixi run verify-map
+pixi run check
 ```
+
+Full command guidance lives in [docs/TASKS.md](docs/TASKS.md).
 
 ## Quick Start
 
 ```powershell
-# clone
 git clone https://github.com/jimbrig/us_parcels.git
 cd us_parcels
-
-# copy environment file
 cp .env.example .env
 
-# start the stack
-docker compose up -d
+pixi install
+bun install
 
-# verify
-docker compose ps
+pixi run up
+pixi run status
 ```
 
-## Services
+## Core Services
 
 | Service | Port | Purpose |
 |---------|------|---------|
-| **PostGIS** | 5432 | PostgreSQL 17 + PostGIS 3.5, tuned for spatial workloads |
-| **Martin** | 3000 | Vector tiles from PostGIS tables + PMTiles files |
-| **pg_tileserv** | 7800 | MVT tiles from PostGIS tables and SQL functions |
-| **pg_featureserv** | 9090 | OGC API Features (GeoJSON, filtering, spatial queries) |
-| **MinIO** | 9000/9001 | S3-compatible object storage (API / web console) |
-| **Dashboard** | 8080 | nginx serving index.html with service health + map preview |
-| **TiTiler** | 8000 | Dynamic raster COG tile server (profile: `raster`) |
-| **GDAL** | -- | On-demand ingestion container (profile: `tools`) |
+| PostGIS | 5432 | relational working surface for loaded subsets |
+| Martin | 3000 | vector tiles from PostGIS and selected PMTiles |
+| pg_tileserv | 7800 | direct MVT from PostGIS |
+| pg_featureserv | 9090 | OGC Features API from PostGIS |
+| MinIO | 9000/9001 | local object storage for published artifacts |
+| Dashboard | 8080 | nginx UI and single-origin proxy |
+| ingest-api | 8001 | local ingestion service |
+| TiTiler | 8000 | optional raster service |
 
-### Docker Profiles
+## Common Workflows
 
-```powershell
-docker compose up -d                              # core stack
-docker compose --profile raster up -d             # + TiTiler
-docker compose --profile tools run --rm gdal ...  # GDAL one-shot
-```
-
-## Data Pipeline
-
-### Extract from Source GPKG
+### bring up the stack
 
 ```powershell
-# by bounding box (fast, uses spatial index)
-pixi run ogr2ogr -f Parquet -lco COMPRESSION=ZSTD `
-  -spat -84.40 33.74 -84.37 33.77 `
-  data/geoparquet/atlanta.parquet $gpkg lr_parcel_us
-
-# by attribute filter (exact but slower)
-pixi run ogr2ogr -f Parquet -lco COMPRESSION=ZSTD `
-  -where "statefp = '08'" `
-  data/geoparquet/colorado.parquet $gpkg lr_parcel_us
-
-# full pipeline: extract -> PostGIS -> export derivatives
-.\scripts\pipeline.ps1 -Action full -State "08" -Name "colorado"
+pixi run up
+pixi run up-ingest
+pixi run up-dev
 ```
 
-### Load into PostGIS
+### run the minimal showcase
 
 ```powershell
-docker compose --profile tools run --rm gdal ogr2ogr `
-  -f PostgreSQL "PG:host=postgis dbname=parcels user=parcels password=parcels" `
-  data/geoparquet/colorado.parquet `
-  -nln parcels.parcel_raw -append -progress --config PG_USE_COPY YES
+pixi run showcase
+pixi run serve-map
+pixi run verify-map
 ```
 
-### Query with DuckDB (MinIO S3)
+### work with the pipeline
 
-```sql
-SET s3_endpoint = 'localhost:9000';
-SET s3_access_key_id = 'minioadmin';
-SET s3_secret_access_key = 'minioadmin';
-SET s3_use_ssl = false;
-SET s3_url_style = 'path';
-
-SELECT statefp, COUNT(*) as parcels
-FROM read_parquet('s3://geodata/parcels/raw/**/*.parquet', hive_partitioning=true)
-GROUP BY statefp ORDER BY parcels DESC;
+```powershell
+pixi run pipeline -- -Action status
+pixi run pipeline -- -Action cloud-state -State 13 -Name georgia
+pixi run pipeline -- -Action upload-minio -State 13
 ```
 
-## Attribute Coverage
+### query published artifacts
 
-Coverage varies wildly by county assessor. The parcel geometry + ID + owner + address are universal. Everything else is county-dependent:
+```powershell
+pixi run query-minio
+```
 
-| Field | CO (Denver) | TX (Dallas) | NY (Manhattan) | GA (Atlanta) |
-|-------|-------------|-------------|----------------|--------------|
-| address | 99% | 96% | 98% | 99% |
-| owner | 100% | 100% | 100% | 100% |
-| totalvalue | 98% | 100% | 90% | 0% |
-| yearbuilt | 80% | 0% | 90% | 0% |
-| usedesc | 100% | 0% | 6% | 0% |
-| saleamt | 93% | 0% | 0% | 0% |
+## Storage Conventions
 
-## Connection Strings
+Canonical published artifact layout:
+
+```text
+data/
+  flatgeobuf/state=13/parcels.fgb
+  geoparquet/state=13/parcels.parquet
+  pmtiles/state=13/parcels.pmtiles
+```
+
+Canonical object storage layout:
+
+```text
+s3://geodata/parcels/state=13/parcels.fgb
+s3://geodata/parcels/state=13/parcels.parquet
+s3://geodata/parcels/state=13/parcels.pmtiles
+```
+
+## Connection Points
 
 | Context | Value |
 |---------|-------|
-| Host (psql) | `psql -h localhost -p 5432 -U parcels -d parcels` |
-| Host (URI) | `postgresql://parcels:parcels@localhost:5432/parcels` |
-| Docker network | `postgresql://parcels:parcels@postgis:5432/parcels` |
-| MinIO S3 | `http://localhost:9000` (user: minioadmin) |
-| MinIO Console | `http://localhost:9001` |
+| psql | `psql -h localhost -p 5432 -U parcels -d parcels` |
+| host URI | `postgresql://parcels:parcels@localhost:5432/parcels` |
+| docker URI | `postgresql://parcels:parcels@postgis:5432/parcels` |
+| MinIO API | `http://localhost:9000` |
+| MinIO console | `http://localhost:9001` |
 
-## Documentation
+## Additional Docs
 
-- **[docs/FORMATS.md](docs/FORMATS.md)** -- comprehensive reference for all geospatial formats, tile specifications (MVT, MLT, PMTiles), serving methods, and enrichment data sources
-- **[docs/MIGRATION_PLAN.md](docs/MIGRATION_PLAN.md)** -- cloud migration strategy (Azure Blob, hive-partitioned GeoParquet, DuckDB cloud queries)
-
-## Enrichment Roadmap
-
-| Priority | Source | Value | Status |
-|----------|--------|-------|--------|
-| 1 | Census ACS block groups | Income, demographics, housing tenure | Planned |
-| 2 | FEMA NFHL flood zones | Flood risk per parcel | Planned |
-| 3 | Overture Maps buildings | Building footprints, coverage ratio | Planned |
-| 4 | SSURGO soils | Drainage, buildability, farmland class | Planned |
-| 5 | NWI wetlands | Development constraints | Planned |
-| 6 | USGS 3DEP elevation | Slope, terrain, viewshed | Planned |
-| 7 | RealEstateAPI | AVM, tax, mortgage, comps (targeted) | Available |
-
-## Schema Reference
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `parcelid` | String | Primary parcel identifier |
-| `geoid` | String | Combined state+county FIPS |
-| `statefp` | String | State FIPS code |
-| `countyfp` | String | County FIPS code |
-| `parceladdr` | String | Parcel address |
-| `ownername` | String | Property owner name |
-| `totalvalue` | Integer64 | Total assessed value |
-| `yearbuilt` | Integer | Year structure built |
-| `usedesc` | String | Land use description |
-| `geom` | MultiPolygon | Parcel geometry (WGS 84) |
+- [docs/FORMATS.md](docs/FORMATS.md)
+- [docs/CLOUD_NATIVE_PIPELINE_SPEC.md](docs/CLOUD_NATIVE_PIPELINE_SPEC.md)
+- [docs/MIGRATION_PLAN.md](docs/MIGRATION_PLAN.md)
+- [docs/VISUAL_VERIFICATION.md](docs/VISUAL_VERIFICATION.md)
+- [docs/ROADMAP.md](docs/ROADMAP.md)

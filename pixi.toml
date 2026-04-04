@@ -8,13 +8,13 @@ version = "0.1.0"
 # ---- docker lifecycle ----
 [tasks]
 up = "docker compose up -d"
+up-ingest = "docker compose --profile ingest up -d"
+up-raster = "docker compose --profile raster up -d"
+up-dev = "docker compose --profile ingest --profile raster up -d"
 down = "docker compose down"
 logs = "docker compose logs -f"
 status = "docker compose ps"
 restart = "docker compose restart"
-
-# start with raster/tools profiles
-up-all = "docker compose --profile raster --profile tools up -d"
 
 # database
 psql = "docker compose exec postgis psql -U parcels -d parcels"
@@ -23,7 +23,24 @@ psql = "docker compose exec postgis psql -U parcels -d parcels"
 ingest = { cmd = "docker compose --profile tools run --rm gdal bash scripts/ingest.sh", description = "Load a file into PostGIS via Docker GDAL" }
 
 # ingestion via PowerShell wrapper (more options: -Replace, -BuildIndex, -Layer)
-ingest-ps = { cmd = "powershell -File scripts/ingest_postgis.ps1", description = "Ingest via PowerShell wrapper script" }
+ingest-ps = { cmd = "pwsh -NoProfile -File scripts/ingest_postgis.ps1", description = "Ingest via PowerShell wrapper script" }
+
+# cloud pipeline (use pwsh -NoProfile for consistent iteration)
+showcase = { cmd = "pwsh -NoProfile -File scripts/showcase.ps1", description = "Run cloud pipeline on minimal sample (no GPKG)" }
+validate = { cmd = "uv run --with duckdb scripts/validate_cloud_artifacts.py", description = "Validate cloud artifacts (pass -- --state 13)" }
+query-minio = { cmd = "uv run --with duckdb scripts/query_minio.py", description = "Query MinIO parquet via DuckDB" }
+pipeline = { cmd = "pwsh -NoProfile -File scripts/pipeline.ps1", description = "Pipeline entrypoint (pass -- -Action ...)" }
+upload-minio = { cmd = "uv run --with minio scripts/upload_to_minio.py", description = "Upload cloud artifacts to MinIO" }
+martin-config = { cmd = "docker compose restart martin", description = "Restart Martin after config changes" }
+serve-map = { cmd = "bun run serve:map", description = "Serve the static frontend on :8081" }
+verify-map = { cmd = "bun run verify:map", description = "Run map-only Playwright tests" }
+verify-browser = { cmd = "bun run verify:browser", description = "Run full Playwright tests" }
+check = { cmd = "pwsh -NoProfile -Command \"pixi run check-python; pixi run check-ps1; pixi run lint-ingest-api; pixi run test-ingest-api\"", description = "Run repo smoke checks" }
+check-python = { cmd = "uv run --with duckdb python -c \"import duckdb; c=duckdb.connect(); c.execute('INSTALL spatial'); c.execute('LOAD spatial'); print('duckdb spatial ok')\"", description = "Check duckdb spatial extension" }
+check-ps1 = { cmd = "pwsh -NoProfile -Command \"Get-Command pwsh | Out-Null; Write-Host 'pwsh ok'\"", description = "Check pwsh availability" }
+lint-ingest-api = { cmd = "uv run --project services/ingest-api --extra dev ruff check services/ingest-api", description = "Lint ingest-api service" }
+test-ingest-api = { cmd = "uv run --project services/ingest-api --extra dev pytest services/ingest-api/tests", description = "Test ingest-api service" }
+tiger-indexes = { cmd = "docker compose exec -T postgis psql -U parcels -d parcels -f - < scripts/add_tiger_indexes.sql", description = "Create TIGER spatial indexes" }
 
 # build spatial indexes after bulk loading
 index = "docker compose exec postgis psql -U parcels -d parcels -c \"CREATE INDEX IF NOT EXISTS idx_parcel_raw_geom ON parcels.parcel_raw USING gist(geom);\""

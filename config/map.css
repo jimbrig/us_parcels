@@ -1,0 +1,36 @@
+/* map.html styles - parcel map UI/UX */
+body { margin: 0; padding: 0; font-family: 'Inter', -apple-system, sans-serif; }
+#map { position: absolute; top: 0; bottom: 0; width: 100%; }
+
+.nav-bar {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  z-index: 10; display: flex; gap: 8px; background: rgba(15, 17, 23, 0.95);
+  padding: 8px 14px; border-radius: 8px; border: 1px solid #2e3241;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.nav-bar a, .nav-bar select {
+  font-size: 13px; color: #e4e6ef; text-decoration: none;
+  padding: 5px 10px; border-radius: 6px; border: 1px solid #2e3241;
+  background: transparent; cursor: pointer; font-family: inherit;
+}
+.nav-bar a:hover, .nav-bar select:hover { border-color: #6c63ff; }
+.nav-bar select { min-width: 200px; }
+
+.map-status {
+  position: absolute; bottom: 36px; left: 50%; transform: translateX(-50%);
+  z-index: 10; padding: 10px 18px; border-radius: 8px;
+  font-size: 13px; background: rgba(15, 17, 23, 0.95);
+  border: 1px solid #2e3241; color: #e4e6ef;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  transition: opacity 0.2s; pointer-events: none;
+}
+.map-status:empty { display: none; }
+.map-status-loading { border-color: #6c63ff; color: #a5b4fc; }
+.map-status-success { border-color: #34d399; color: #6ee7b7; }
+.map-status-error { border-color: #f87171; color: #fca5a5; }
+
+.popup-content { font-size: 13px; line-height: 1.6; }
+.popup-content strong { display: block; margin-bottom: 4px; }
+.popup-content .label { color: #94a3b8; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+.maplibregl-ctrl-attrib a { color: #64748b; }

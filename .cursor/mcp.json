@@ -1,0 +1,109 @@
+{
+  "mcpServers": {
+    "r-btw": {
+      "type": "stdio",
+      "command": "Rscript",
+      "args": ["-e", "btw::btw_mcp_server()"]
+    },
+    "firecrawl": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": [
+        "-y",
+        "firecrawl-mcp@latest"
+      ],
+      "env": {
+        "FIRECRAWL_API_KEY": "${env:FIRECRAWL_API_KEY}"
+      },
+      "envFile": "${workspaceFolder}/.cursor/mcp.env"
+    },
+    "tavily": {
+      "type": "http",
+      "url": "https://mcp.tavily.com/mcp/?tavilyApiKey=${env:TAVILY_API_KEY}",
+      "envFile": "${workspaceFolder}/.cursor/mcp.env",
+      "env": {
+        "TAVILY_API_KEY": "${env:TAVILY_API_KEY}"
+      }
+    },
+    "gitKraken": {
+      "command": "gk.exe",
+      "type": "stdio",
+      "name": "GitKraken",
+      "args": [
+        "mcp",
+        "--host=cursor",
+        "--source=gitlens",
+        "--scheme=cursor"
+      ],
+      "env": {}
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp",
+      "headers": {
+        "CONTEXT7_API_KEY": "${env:CONTEXT7_API_KEY}"
+      },
+      "envFile": "${workspaceFolder}/.cursor/mcp.env",
+      "env": {
+        "CONTEXT7_API_KEY": "${env:CONTEXT7_API_KEY}"
+      }
+    },
+    "postgres": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-postgres",
+        "postgresql://parcels:parcels@localhost:5432/parcels"
+      ]
+    },
+    "mapbox-mcp": {
+      "url": "https://mcp.mapbox.com/mcp"
+    },
+    "github": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["-y", "@modelcontextprotocol/server-github"],
+      "env": {
+        "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_PAT}"
+      }
+    },
+    "playwright": {
+      "type": "stdio",
+      "command": "bunx",
+      "args": ["-y", "playwright-mcp@latest"]
+    }
+  },
+  "inputs": [
+    {
+      "id": "pg_password",
+      "type": "promptString",
+      "description": "Enter password for PostgreSQL connection",
+      "password": true
+    },
+    {
+      "id": "context7_api_key",
+      "type": "promptString",
+      "description": "Context7 API Key (get from https://context7.com/account/api-keys)",
+      "password": true
+    },
+    {
+      "id": "exa_api_key",
+      "type": "promptString",
+      "description": "Exa API Key (get from https://exa.ai/account/api-keys)",
+      "password": true
+    },
+    {
+      "id": "firecrawl_api_key",
+      "type": "promptString",
+      "description": "Firecrawl API Key (get from https://www.firecrawl.dev/app/api-keys)",
+      "password": true
+    },
+    {
+      "id": "tavily_api_key",
+      "type": "promptString",
+      "description": "Tavily API Key (get from https://tavily.com/account/api-keys)",
+      "password": true
+    }
+  ]
+}

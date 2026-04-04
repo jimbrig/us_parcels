@@ -8,6 +8,7 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="/node_modules/pmtiles/dist/pmtiles.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -185,6 +186,7 @@
     }
 
     .map-container .maplibregl-map { width: 100%; height: 100%; }
+    .map-layer-status { font-size: 0.75rem; color: var(--text-muted); }
 
     .map-toolbar {
       display: flex;
@@ -321,7 +323,7 @@
   <h1><span>US Parcels</span> Services Dashboard</h1>
   <div style="display:flex;align-items:center;gap:1rem;">
     <a class="btn" href="/ingest.html" style="font-size:0.78rem;">Extract & Ingest</a>
-    <button class="btn" onclick="window.open('http://localhost:8888','_blank','noopener')" style="font-size:0.78rem;">Style Editor</button>
+    <a class="btn" href="/maputnik/" target="_blank" rel="noopener" style="font-size:0.78rem;">Style Editor</a>
     <span class="header-meta">155M parcel records &middot; docker compose stack</span>
   </div>
 </header>
@@ -334,9 +336,11 @@
     <div class="section-title">Map Preview</div>
     <div class="map-toolbar">
       <select id="layer-select">
-        <option value="postgis">PostGIS &mdash; parcels.parcel (normalized)</option>
-        <option value="pmtiles">PMTiles &mdash; atlanta_downtown</option>
+        <option value="showcase">Showcase (published artifact demo)</option>
+        <option value="postgis">PostGIS (working subset)</option>
+        <option value="pmtiles">PMTiles (local atlanta sample)</option>
       </select>
+      <span id="map-layer-status" class="map-layer-status"></span>
       <a class="btn" href="map.html" target="_blank">Open full map</a>
     </div>
     <div class="map-container">
@@ -348,21 +352,18 @@
     <div class="section-title">Architecture</div>
     <div class="arch-diagram"><span class="ylw">Source GPKG</span> (155M parcels)
     |
-    | <span class="grn">ogr2ogr -spat / -where</span>  (extract by state, county, or bbox)
-    v
-<span class="hl">PostGIS</span>  <-- central store, single source of truth
+    | <span class="grn">ogr2ogr -spat / -where</span>  subset extraction
+    +------------------------------+
+    |                              |
+    v                              v
+<span class="hl">PostGIS</span>                 <span class="hl">MinIO S3</span> (:9000)
+(working subset surface)         (published artifact surface)
+    |                              |
+    |--- <span class="hl">Martin</span> (:3000)       +-- <span class="ylw">GeoParquet</span> analytics
+    |--- <span class="hl">pg_tileserv</span> (:7800)  +-- <span class="ylw">PMTiles</span> map delivery
+    |--- <span class="hl">pg_featureserv</span> (:9090)+-- <span class="ylw">FlatGeoBuf</span> geometry streaming
     |
-    |--- <span class="hl">Martin</span> (:3000)       vector tiles from tables + PMTiles files
-    |--- <span class="hl">pg_tileserv</span> (:7800)  MVT tiles from tables & SQL functions
-    |--- <span class="hl">pg_featureserv</span> (:9090) OGC Features API (GeoJSON)
-    |
-    | <span class="grn">ogr2ogr / DuckDB</span>  (export derivatives)
-    v
-<span class="hl">MinIO S3</span> (:9000)  local object storage
-    |
-    +-- <span class="ylw">GeoParquet</span>  analytics, DuckDB/pandas/Arrow queries
-    +-- <span class="ylw">PMTiles</span>     static vector tile hosting (CDN/S3)
-    +-- <span class="ylw">FlatGeoBuf</span>  HTTP range-request serving</div>
+    +-- normalization / search / local serving</div>
   </div>
 
   <div class="db-status">
@@ -393,7 +394,7 @@
     </div>
     <div class="conn-row">
       <span class="conn-label">MinIO S3</span>
-      <code class="conn-value">s3://geodata/geoparquet/*.parquet (endpoint: localhost:9000)</code>
+      <code class="conn-value">s3://geodata/parcels/state=13/parcels.parquet (endpoint: localhost:9000)</code>
     </div>
     <div class="conn-row">
       <span class="conn-label">DuckDB</span>
@@ -418,66 +419,66 @@ const SERVICES = [
     name: 'Martin',
     desc: 'Vector tile server. Serves PostGIS tables as MVT and PMTiles files from disk. Built-in web UI with tile inspector.',
     port: 3000,
-    primaryUrl: 'http://localhost:3000',
-    healthUrl: 'http://localhost:3000/catalog',
+    primaryUrl: '/tiles/',
+    healthUrl: '/tiles/catalog',
     links: [
-      { label: 'Dashboard', href: 'http://localhost:3000' },
-      { label: 'Catalog', href: 'http://localhost:3000/catalog' }
+      { label: 'Dashboard', href: '/tiles/' },
+      { label: 'Catalog', href: '/tiles/catalog' }
     ]
   },
   {
     name: 'pg_tileserv',
     desc: 'Lightweight MVT tile server. Auto-discovers PostGIS tables and functions, serves as vector tiles with built-in preview UI.',
     port: 7800,
-    primaryUrl: 'http://localhost:7800',
-    healthUrl: 'http://localhost:7800/index.json',
+    primaryUrl: '/tileserv/',
+    healthUrl: '/tileserv/index.json',
     links: [
-      { label: 'UI', href: 'http://localhost:7800' },
-      { label: 'API', href: 'http://localhost:7800/index.json' }
+      { label: 'UI', href: '/tileserv/' },
+      { label: 'API', href: '/tileserv/index.json' }
     ]
   },
   {
     name: 'pg_featureserv',
     desc: 'OGC Features API server. Auto-discovers PostGIS tables, views, and functions. Supports filtering, spatial queries, and GeoJSON output.',
     port: 9090,
-    primaryUrl: 'http://localhost:9090',
-    healthUrl: 'http://localhost:9090/collections.json',
+    primaryUrl: '/features/',
+    healthUrl: '/features/collections.json',
     links: [
-      { label: 'UI', href: 'http://localhost:9090' },
-      { label: 'Collections', href: 'http://localhost:9090/collections.json' },
-      { label: 'Functions', href: 'http://localhost:9090/functions.json' }
+      { label: 'UI', href: '/features/' },
+      { label: 'Collections', href: '/features/collections.json' },
+      { label: 'Functions', href: '/features/functions.json' }
     ]
   },
   {
     name: 'Maputnik',
     desc: 'Visual style editor for MapLibre GL styles. Edit parcel layer styling, colors, labels, and zoom-level rules interactively.',
     port: 8888,
-    primaryUrl: 'http://localhost:8888',
-    healthUrl: null,
+    primaryUrl: '/maputnik/',
+    healthUrl: '/maputnik/',
     links: [
-      { label: 'Editor', href: 'http://localhost:8888' }
+      { label: 'Editor', href: '/maputnik/' }
     ]
   },
   {
     name: 'MinIO',
     desc: 'S3-compatible object storage. Stores extracted GeoParquet, PMTiles, and FlatGeoBuf files. Query via DuckDB httpfs or GDAL /vsis3/.',
     port: 9001,
-    primaryUrl: 'http://localhost:9001',
-    healthUrl: 'http://localhost:9000/minio/health/live',
+    primaryUrl: '/minio/',
+    healthUrl: '/s3/',
     links: [
-      { label: 'Console', href: 'http://localhost:9001' }
+      { label: 'Console', href: '/minio/' }
     ]
   },
   {
     name: 'Ingest API',
     desc: 'FastAPI service for extracting parcels from GPKG by bounding box, loading into PostGIS, and exporting to GeoParquet/PMTiles/FlatGeoBuf.',
     port: 8001,
-    primaryUrl: 'http://localhost:8001/docs',
-    healthUrl: 'http://localhost:8001/health',
+    primaryUrl: '/api/docs',
+    healthUrl: '/api/health',
     links: [
-      { label: 'Docs', href: 'http://localhost:8001/docs' },
-      { label: 'Jobs', href: 'http://localhost:8001/jobs' },
-      { label: 'Data', href: 'http://localhost:8001/data' }
+      { label: 'Docs', href: '/api/docs' },
+      { label: 'Jobs', href: '/api/jobs' },
+      { label: 'Data', href: '/api/data' }
     ],
     profile: 'ingest'
   },
@@ -558,6 +559,12 @@ setInterval(() => {
 }, 15000);
 
 // ---- map ----
+if (typeof pmtiles !== 'undefined') {
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol('pmtiles', protocol.tile);
+}
+
+const base = window.location.origin;
 const map = new maplibregl.Map({
   container: 'map',
   style: {
@@ -572,50 +579,66 @@ const map = new maplibregl.Map({
     },
     layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
   },
-  center: [-104.985, 39.740],
-  zoom: 14
+  center: [-84.3875, 33.7515],
+  zoom: 17
 });
 
 map.addControl(new maplibregl.NavigationControl());
 
 const LAYERS = {
+  showcase: {
+    sourceId: 'parcels-showcase',
+    source: {
+      type: 'vector',
+      url: `pmtiles://${base}/data/sample/showcase/parcels.pmtiles`,
+      minzoom: 8,
+      maxzoom: 16
+    },
+    sourceLayer: 'parcels',
+    center: [-84.3875, 33.7515],
+    zoom: 17
+  },
   pmtiles: {
     sourceId: 'parcels-pmtiles',
     source: {
       type: 'vector',
-      tiles: ['/tiles/atlanta/{z}/{x}/{y}'],
+      tiles: [`${base}/tiles/atlanta/{z}/{x}/{y}`],
       minzoom: 12,
       maxzoom: 16
     },
-    sourceLayer: 'atlanta_downtown'
+    sourceLayer: 'atlanta_downtown',
+    center: [-84.3857, 33.7545],
+    zoom: 14
   },
   postgis: {
     sourceId: 'parcels-postgis',
     source: {
       type: 'vector',
-      tiles: ['/tiles/parcels/{z}/{x}/{y}'],
+      tiles: [`${base}/tiles/parcels/{z}/{x}/{y}`],
       minzoom: 0,
       maxzoom: 22
     },
-    sourceLayer: 'parcels'
+    sourceLayer: 'parcels',
+    center: [-104.985, 39.740],
+    zoom: 14
   }
 };
 
-let activeLayerKey = 'pmtiles';
+let activeLayerKey = 'showcase';
 
 function addParcelLayers(key) {
   const cfg = LAYERS[key];
+  if (map.getSource(cfg.sourceId)) map.removeSource(cfg.sourceId);
+  map.addSource(cfg.sourceId, cfg.source);
 
-  if (!map.getSource(cfg.sourceId)) {
-    map.addSource(cfg.sourceId, cfg.source);
-  }
-
+  const fillMinzoom = key === 'showcase' ? 8 : 12;
   map.addLayer({
     id: 'parcels-fill',
     type: 'fill',
     source: cfg.sourceId,
     'source-layer': cfg.sourceLayer,
-    paint: { 'fill-color': '#6c63ff', 'fill-opacity': 0.45 }
+    minzoom: fillMinzoom,
+    paint: { 'fill-color': '#6c63ff', 'fill-opacity': 0.5 }
   });
 
   map.addLayer({
@@ -623,19 +646,25 @@ function addParcelLayers(key) {
     type: 'line',
     source: cfg.sourceId,
     'source-layer': cfg.sourceLayer,
+    minzoom: fillMinzoom,
     paint: { 'line-color': '#4f46e5', 'line-width': 1 }
   });
 
   activeLayerKey = key;
+  if (cfg.center) map.flyTo({ center: cfg.center, zoom: cfg.zoom });
 }
 
 function removeParcelLayers() {
   ['parcels-fill', 'parcels-outline'].forEach(id => {
     if (map.getLayer(id)) map.removeLayer(id);
   });
+  Object.keys(LAYERS).forEach(k => {
+    const id = LAYERS[k].sourceId;
+    if (map.getSource(id)) map.removeSource(id);
+  });
 }
 
-map.on('load', () => addParcelLayers('postgis'));
+map.on('load', () => addParcelLayers('showcase'));
 
 document.getElementById('layer-select').addEventListener('change', (e) => {
   removeParcelLayers();

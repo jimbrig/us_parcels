@@ -1,0 +1,13 @@
+{
+  "sqltools.connections": [
+    {
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "localhost",
+      "driver": "PostgreSQL",
+      "name": "LandRiseDB (Dev)",
+      "group": "LandRise",
+      "connectString": "postgresql://landrisedbadmin:l%40ndrise123@landrise-db-server.postgres.database.azure.com:5432/landrise_dev"
+    }
+  ]
+}

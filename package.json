@@ -4,19 +4,19 @@
   "private": true,
   "description": "Geospatial platform for 155M US parcel records",
   "scripts": {
-    "dev": "docker compose up -d && echo 'services running'",
-    "dev:ingest": "docker compose --profile ingest up -d",
-    "dev:all": "docker compose --profile ingest --profile raster up -d",
-    "down": "docker compose down",
-    "etl": "psql postgresql://parcels:parcels@localhost:5432/parcels -f scripts/etl_raw_to_parcel.sql",
-    "query:minio": "uv run --with duckdb scripts/query_minio.py",
-    "martin:config": "docker compose restart martin"
+    "serve:map": "bunx serve . -p 8081",
+    "verify:map": "playwright test --project=map-only",
+    "verify:browser": "playwright test",
+    "verify:proxy": "playwright test tests/map-proxy.spec.ts",
+    "verify:ui": "playwright test tests/map-visual.spec.ts"
   },
   "dependencies": {
+    "@watergis/maplibre-gl-terradraw": "^1.12.1",
     "maplibre-gl": "^5.19.0",
-    "@watergis/maplibre-gl-terradraw": "^1.12.1"
+    "pmtiles": "^4.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/bun": "latest"
   }
 }

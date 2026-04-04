@@ -1,6 +1,8 @@
 """
 ingestion API -- extracts parcels from GPKG by bounding box,
 loads into PostGIS, and optionally exports to derivative formats.
+
+this service is a local workflow convenience layer, not a durable job system.
 """
 from __future__ import annotations
 
@@ -8,7 +10,6 @@ import os
 import subprocess
 import threading
 from pathlib import Path
-from typing import Optional
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -32,11 +33,19 @@ jobs: dict[str, dict] = {}
 
 class ExtractRequest(BaseModel):
     name: str = Field(..., description="name for this extract (used in filenames)")
-    bbox: list[float] = Field(..., min_length=4, max_length=4, description="[xmin, ymin, xmax, ymax]")
+    bbox: list[float] = Field(
+        ...,
+        min_length=4,
+        max_length=4,
+        description="[xmin, ymin, xmax, ymax]",
+    )
     load_postgis: bool = Field(True, description="load into PostGIS after extraction")
     table: str = Field("parcels.parcel_raw", description="target PostGIS table")
     formats: list[str] = Field(["parquet"], description="output formats: parquet, pmtiles, fgb")
-    simplify: Optional[float] = Field(None, description="simplification tolerance (degrees), e.g. 0.0001")
+    simplify: float | None = Field(
+        None,
+        description="simplification tolerance (degrees), e.g. 0.0001",
+    )
 
 
 class JobStatus(BaseModel):

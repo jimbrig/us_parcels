@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  repo-smoke:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Setup Pixi
+        uses: prefix-dev/setup-pixi@v0.8.8
+
+      - name: Install Bun dependencies
+        run: bun install
+
+      - name: Install ingest-api dev dependencies
+        run: uv sync --project services/ingest-api --extra dev
+
+      - name: Install Playwright browser
+        run: bunx playwright install chromium
+
+      - name: Run repo checks
+        run: pixi run check
+
+      - name: Build showcase artifacts
+        run: pixi run showcase
+
+      - name: Start static map server
+        shell: pwsh
+        run: |
+          $proc = Start-Process bun -ArgumentList "run","serve:map" -PassThru
+          "SERVER_PID=$($proc.Id)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Start-Sleep -Seconds 5
+
+      - name: Run map verification
+        run: pixi run verify-map
+
+      - name: Stop static map server
+        if: always()
+        shell: pwsh
+        run: |
+          if ($env:SERVER_PID) {
+            Stop-Process -Id $env:SERVER_PID -Force
+          }

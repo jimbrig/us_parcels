@@ -1,20 +1,23 @@
-# pipeline.ps1 - unified extract -> load -> export workflow
+# pipeline.ps1 - unified working-surface and artifact pipeline
 #
-# centralizes PostGIS as the single source of truth.
-# extracts from the monolithic GPKG, loads into PostGIS,
-# then optionally exports derivative formats (PMTiles, FlatGeoBuf, GeoParquet).
+# raw authority: source GPKG
+# relational working surface: PostGIS
+# published artifact surface: GeoParquet, FlatGeoBuf, PMTiles
 #
 # usage:
 #   .\scripts\pipeline.ps1 -Action extract-state -State "13" -Name "georgia"
+#   .\scripts\pipeline.ps1 -Action extract-state-fgb -State "13" -Name "georgia"
 #   .\scripts\pipeline.ps1 -Action extract-bbox -Bbox "-84.40,33.74,-84.37,33.77" -Name "atlanta_dt"
 #   .\scripts\pipeline.ps1 -Action load -Source data/geoparquet/georgia.parquet
 #   .\scripts\pipeline.ps1 -Action export -Format pmtiles -Name "atlanta_dt"
 #   .\scripts\pipeline.ps1 -Action full -State "13" -Name "georgia"
+#   .\scripts\pipeline.ps1 -Action cloud-state -State "13" -Name "georgia"
+#   .\scripts\pipeline.ps1 -Action cloud-full
 #   .\scripts\pipeline.ps1 -Action status
 
 param(
     [Parameter(Mandatory=$true)]
-    [ValidateSet("extract-state","extract-bbox","load","export","full","status")]
+    [ValidateSet("extract-state","extract-state-fgb","extract-bbox","extract-bbox-fgb","load","export","full","cloud-state","cloud-full","upload-minio","status")]
     [string]$Action,
 
     [string]$State,
@@ -29,7 +32,6 @@ param(
     [string]$Table = "parcels.parcel_raw"
 )
 
-$PgConn = "PG:host=localhost port=5432 dbname=parcels user=parcels password=parcels"
 $DockerPgConn = "PG:host=postgis port=5432 dbname=parcels user=parcels password=parcels"
 
 # state bounding boxes
@@ -88,16 +90,16 @@ function Invoke-Extract {
 
     Write-Step "extracting $outName ($fmt) with bbox: $bbox"
 
-    $args = @("-f", $fmt)
+    $ogrArgs = @("-f", $fmt)
     if ($fmt -eq "Parquet") {
-        $args += @("-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW")
+        $ogrArgs += @("-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW")
     }
     if ($fmt -eq "PMTiles") {
-        $args += @("-dsco", "MINZOOM=12", "-dsco", "MAXZOOM=16", "-dsco", "NAME=$outName")
+        $ogrArgs += @("-dsco", "MINZOOM=12", "-dsco", "MAXZOOM=16", "-dsco", "NAME=$outName")
     }
-    $args += @("-spat", $b[0], $b[1], $b[2], $b[3], "-progress", $outFile, $GpkgFile, $GpkgLayer)
+    $ogrArgs += @("-spat", $b[0], $b[1], $b[2], $b[3], "-progress", $outFile, $GpkgFile, $GpkgLayer)
 
-    pixi run ogr2ogr @args
+    pixi run ogr2ogr @ogrArgs
 
     if ($LASTEXITCODE -eq 0) {
         $size = (Get-Item $outFile).Length / 1MB
@@ -148,27 +150,50 @@ function Invoke-Export {
 
     Write-Step "exporting $sourceTable -> $outFile ($driver)"
 
-    $args = @(
+    $dockerArgs = @(
         "compose", "--profile", "tools", "run", "--rm", "gdal",
         "ogr2ogr", "-f", $driver
     )
 
     if ($fmt -eq "parquet") {
-        $args += @("-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW")
+        $dockerArgs += @("-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW")
     }
     if ($fmt -eq "pmtiles") {
-        $args += @("-dsco", "MINZOOM=12", "-dsco", "MAXZOOM=16", "-dsco", "NAME=$outName")
+        $dockerArgs += @("-dsco", "MINZOOM=12", "-dsco", "MAXZOOM=16", "-dsco", "NAME=$outName")
     }
 
-    $args += @("-progress", $outFile, $DockerPgConn, $sourceTable)
+    $dockerArgs += @("-progress", $outFile, $DockerPgConn, $sourceTable)
 
-    & docker @args
+    & docker @dockerArgs
 
     if ($LASTEXITCODE -eq 0) {
         $size = (Get-Item $outFile).Length / 1MB
         Write-Ok "$outFile ($([math]::Round($size, 2)) MB)"
     } else {
         Write-Err "export failed"
+    }
+}
+
+function Invoke-FgbToPmtiles {
+    param([string]$fgbPath, [string]$outPath)
+
+    $outDir = Split-Path $outPath -Parent
+    if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
+
+    Write-Step "FGB -> PMTiles via GDAL: $fgbPath"
+    $layerName = [System.IO.Path]::GetFileNameWithoutExtension($fgbPath)
+    docker compose --profile tools run --rm gdal ogr2ogr `
+        -f PMTiles `
+        -dsco MINZOOM=8 `
+        -dsco MAXZOOM=16 `
+        -dsco NAME=$layerName `
+        -progress $outPath $fgbPath
+
+    if ($LASTEXITCODE -eq 0) {
+        $size = (Get-Item $outPath).Length / 1MB
+        Write-Ok "$outPath ($([math]::Round($size, 2)) MB)"
+    } else {
+        Write-Err "PMTiles conversion failed"
     }
 }
 
@@ -180,7 +205,7 @@ function Invoke-Status {
     docker compose exec postgis psql -U parcels -d parcels -c `
         "SELECT COUNT(*) as total, ST_Extent(geom)::text as extent FROM parcels.parcel_raw;"
     Write-Step "data files on disk"
-    Get-ChildItem data -Recurse -File -Exclude ".gitkeep" | 
+    Get-ChildItem data -Recurse -File -Exclude ".gitkeep" |
         Select-Object @{N="Path";E={$_.FullName.Replace((Get-Location).Path + "\", "")}}, @{N="Size_MB";E={[math]::Round($_.Length/1MB, 2)}} |
         Format-Table -AutoSize
 }
@@ -192,9 +217,18 @@ switch ($Action) {
         if (-not $StateBounds.ContainsKey($State)) { Write-Error "unknown state FIPS: $State"; exit 1 }
         Invoke-Extract -bbox $StateBounds[$State] -outName $Name -fmt "Parquet"
     }
+    "extract-state-fgb" {
+        if (-not $State -or -not $Name) { Write-Error "-State and -Name are required"; exit 1 }
+        if (-not $StateBounds.ContainsKey($State)) { Write-Error "unknown state FIPS: $State"; exit 1 }
+        Invoke-Extract -bbox $StateBounds[$State] -outName $Name -fmt "FlatGeoBuf"
+    }
     "extract-bbox" {
         if (-not $Bbox -or -not $Name) { Write-Error "-Bbox and -Name are required"; exit 1 }
         Invoke-Extract -bbox $Bbox -outName $Name -fmt "Parquet"
+    }
+    "extract-bbox-fgb" {
+        if (-not $Bbox -or -not $Name) { Write-Error "-Bbox and -Name are required"; exit 1 }
+        Invoke-Extract -bbox $Bbox -outName $Name -fmt "FlatGeoBuf"
     }
     "load" {
         if (-not $Source) { Write-Error "-Source is required"; exit 1 }
@@ -217,7 +251,7 @@ switch ($Action) {
         Write-Host " Full Pipeline: $Name (state $State)" -ForegroundColor Yellow
         Write-Host "======================================`n" -ForegroundColor Yellow
 
-        $parquetFile = Invoke-Extract -bbox $StateBounds[$State] -outName $Name -fmt "Parquet"
+        Invoke-Extract -bbox $StateBounds[$State] -outName $Name -fmt "Parquet"
         Invoke-Load -sourceFile "data/geoparquet/${Name}.parquet" -targetTable $Table
 
         Write-Step "exporting derivative formats from PostGIS"
@@ -236,6 +270,87 @@ switch ($Action) {
         Write-Host "  GeoParquet:     data/geoparquet/${Name}.parquet" -ForegroundColor White
         Write-Host "  PMTiles:        data/pmtiles/${Name}.pmtiles" -ForegroundColor White
         Write-Host "  FlatGeoBuf:     data/flatgeobuf/${Name}.fgb" -ForegroundColor White
+    }
+    "cloud-state" {
+        if (-not $State -or -not $Name) { Write-Error "-State and -Name are required for cloud-state"; exit 1 }
+        if (-not $StateBounds.ContainsKey($State)) { Write-Error "unknown state FIPS: $State"; exit 1 }
+        Write-Host "`n======================================" -ForegroundColor Yellow
+        Write-Host " Cloud Pipeline: $Name (state $State)" -ForegroundColor Yellow
+        Write-Host "======================================`n" -ForegroundColor Yellow
+
+        $fgbOutName = "state=$State/parcels"
+        $fgbPath = Invoke-Extract -bbox $StateBounds[$State] -outName $fgbOutName -fmt "FlatGeoBuf"
+        if (-not $fgbPath) { exit 1 }
+
+        Write-Step "FGB -> Hilbert GeoParquet"
+        $parquetPath = "data/geoparquet/state=$State/parcels.parquet"
+        uv run --with duckdb scripts/fgb_to_hilbert_parquet.py $fgbPath $parquetPath --state $State
+        if ($LASTEXITCODE -ne 0) { Write-Err "Hilbert conversion failed"; exit 1 }
+
+        Write-Step "FGB -> PMTiles"
+        $pmtilesPath = "data/pmtiles/state=$State/parcels.pmtiles"
+        Invoke-FgbToPmtiles -fgbPath $fgbPath -outPath $pmtilesPath
+
+        Write-Host "`n======================================" -ForegroundColor Green
+        Write-Host " Cloud pipeline complete for $Name" -ForegroundColor Green
+        Write-Host "======================================" -ForegroundColor Green
+        Write-Host "  FGB:       $fgbPath" -ForegroundColor White
+        Write-Host "  GeoParquet: data/geoparquet/state=$State/parcels.parquet" -ForegroundColor White
+        Write-Host "  PMTiles:   data/pmtiles/state=$State/parcels.pmtiles" -ForegroundColor White
+    }
+    "cloud-full" {
+        Write-Host "`n======================================" -ForegroundColor Yellow
+        Write-Host " Cloud Pipeline: ALL STATES" -ForegroundColor Yellow
+        Write-Host "======================================`n" -ForegroundColor Yellow
+        $stateNames = @{
+            "01" = "alabama"
+            "04" = "arizona"
+            "05" = "arkansas"
+            "06" = "california"
+            "08" = "colorado"
+            "09" = "connecticut"
+            "10" = "delaware"
+            "11" = "dc"
+            "12" = "florida"
+            "13" = "georgia"
+            "16" = "idaho"
+            "17" = "illinois"
+            "18" = "indiana"
+            "19" = "iowa"
+            "20" = "kansas"
+            "21" = "kentucky"
+            "22" = "louisiana"
+            "24" = "maryland"
+            "25" = "massachusetts"
+            "26" = "michigan"
+            "27" = "minnesota"
+            "29" = "missouri"
+            "34" = "new_jersey"
+            "36" = "new_york"
+            "37" = "north_carolina"
+            "39" = "ohio"
+            "42" = "pennsylvania"
+            "47" = "tennessee"
+            "48" = "texas"
+            "51" = "virginia"
+            "53" = "washington"
+        }
+        foreach ($s in $StateBounds.Keys) {
+            $n = $stateNames[$s]
+            if (-not $n) { $n = "state_$s" }
+            Write-Host "`n--- $n (state $s) ---" -ForegroundColor Cyan
+            & $PSCommandPath -Action cloud-state -State $s -Name $n
+        }
+        Write-Host "`n======================================" -ForegroundColor Green
+        Write-Host " Cloud pipeline complete for all states" -ForegroundColor Green
+        Write-Host "======================================" -ForegroundColor Green
+    }
+    "upload-minio" {
+        if (-not $State) { Write-Error "-State is required for upload-minio"; exit 1 }
+        Write-Step "uploading cloud artifacts to MinIO (state=$State)"
+        uv run --with minio scripts/upload_to_minio.py --state $State
+        if ($LASTEXITCODE -ne 0) { Write-Err "upload failed (install minio: uv add minio)"; exit 1 }
+        Write-Ok "uploaded to s3://geodata/parcels/state=$State/"
     }
     "status" {
         Invoke-Status

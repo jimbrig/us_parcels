@@ -16,13 +16,11 @@
 data/**
 !data/**/
 !data/**/.gitkeep
+!data/sample/showcase.geojson
 
 # ---- secrets / environment ----
 .env
 .Renviron
-
-# ---- cursor (contains API keys in mcp.json) ----
-.cursor/
 
 # ---- pixi ----
 .pixi/
@@ -57,3 +55,5 @@ Thumbs.db
 # ---- generated / temp ----
 repomix.md
 *.log
+test-results/
+tests/output/
