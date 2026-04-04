@@ -1,0 +1,5 @@
+{
+  "type":"gdal_streamed_alg",
+  "command_line":"gdal vector pipeline read --input \/vsizip\/\/vsicurl\/https:\/\/www2.census.gov\/geo\/tiger\/TIGER2024\/EDGES\/tl_2024_13121_edges.zip\/tl_2024_13121_edges.shp ! reproject --dst-crs EPSG:4326 ! select --fields TLID,ROADFLG,MTFCC,FULLNAME,STATEFP,COUNTYFP",
+  "gdal_version":"3120300"
+}

@@ -6,9 +6,8 @@
   <title>US Parcels - Services Dashboard</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
-  <script src="/node_modules/pmtiles/dist/pmtiles.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -323,7 +322,7 @@
   <h1><span>US Parcels</span> Services Dashboard</h1>
   <div style="display:flex;align-items:center;gap:1rem;">
     <a class="btn" href="/ingest.html" style="font-size:0.78rem;">Extract & Ingest</a>
-    <a class="btn" href="/maputnik/" target="_blank" rel="noopener" style="font-size:0.78rem;">Style Editor</a>
+    <a class="btn" href="http://localhost:8888/" target="_blank" rel="noopener" style="font-size:0.78rem;">Style Editor</a>
     <span class="header-meta">155M parcel records &middot; docker compose stack</span>
   </div>
 </header>
@@ -336,9 +335,8 @@
     <div class="section-title">Map Preview</div>
     <div class="map-toolbar">
       <select id="layer-select">
-        <option value="showcase">Showcase (published artifact demo)</option>
+        <option value="atlanta">Atlanta Parcels (Martin)</option>
         <option value="postgis">PostGIS (working subset)</option>
-        <option value="pmtiles">PMTiles (local atlanta sample)</option>
       </select>
       <span id="map-layer-status" class="map-layer-status"></span>
       <a class="btn" href="map.html" target="_blank">Open full map</a>
@@ -453,20 +451,20 @@ const SERVICES = [
     name: 'Maputnik',
     desc: 'Visual style editor for MapLibre GL styles. Edit parcel layer styling, colors, labels, and zoom-level rules interactively.',
     port: 8888,
-    primaryUrl: '/maputnik/',
-    healthUrl: '/maputnik/',
+    primaryUrl: 'http://localhost:8888/',
+    healthUrl: 'http://localhost:8888/',
     links: [
-      { label: 'Editor', href: '/maputnik/' }
+      { label: 'Editor', href: 'http://localhost:8888/' }
     ]
   },
   {
     name: 'MinIO',
     desc: 'S3-compatible object storage. Stores extracted GeoParquet, PMTiles, and FlatGeoBuf files. Query via DuckDB httpfs or GDAL /vsis3/.',
     port: 9001,
-    primaryUrl: '/minio/',
-    healthUrl: '/s3/',
+    primaryUrl: 'http://localhost:9001/',
+    healthUrl: 'http://localhost:9000/minio/health/live',
     links: [
-      { label: 'Console', href: '/minio/' }
+      { label: 'Console', href: 'http://localhost:9001/' }
     ]
   },
   {
@@ -559,11 +557,6 @@ setInterval(() => {
 }, 15000);
 
 // ---- map ----
-if (typeof pmtiles !== 'undefined') {
-  const protocol = new pmtiles.Protocol();
-  maplibregl.addProtocol('pmtiles', protocol.tile);
-}
-
 const base = window.location.origin;
 const map = new maplibregl.Map({
   container: 'map',
@@ -579,36 +572,24 @@ const map = new maplibregl.Map({
     },
     layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
   },
-  center: [-84.3875, 33.7515],
-  zoom: 17
+  center: [-84.3880, 33.7490],
+  zoom: 15
 });
 
 map.addControl(new maplibregl.NavigationControl());
 
 const LAYERS = {
-  showcase: {
-    sourceId: 'parcels-showcase',
-    source: {
-      type: 'vector',
-      url: `pmtiles://${base}/data/sample/showcase/parcels.pmtiles`,
-      minzoom: 8,
-      maxzoom: 16
-    },
-    sourceLayer: 'parcels',
-    center: [-84.3875, 33.7515],
-    zoom: 17
-  },
-  pmtiles: {
-    sourceId: 'parcels-pmtiles',
+  atlanta: {
+    sourceId: 'parcels-atlanta',
     source: {
       type: 'vector',
       tiles: [`${base}/tiles/atlanta/{z}/{x}/{y}`],
       minzoom: 12,
       maxzoom: 16
     },
-    sourceLayer: 'atlanta_downtown',
-    center: [-84.3857, 33.7545],
-    zoom: 14
+    sourceLayer: 'lr_parcel_us',
+    center: [-84.3880, 33.7490],
+    zoom: 15
   },
   postgis: {
     sourceId: 'parcels-postgis',
@@ -619,19 +600,19 @@ const LAYERS = {
       maxzoom: 22
     },
     sourceLayer: 'parcels',
-    center: [-104.985, 39.740],
+    center: [-84.3880, 33.7490],
     zoom: 14
   }
 };
 
-let activeLayerKey = 'showcase';
+let activeLayerKey = 'atlanta';
 
 function addParcelLayers(key) {
   const cfg = LAYERS[key];
   if (map.getSource(cfg.sourceId)) map.removeSource(cfg.sourceId);
   map.addSource(cfg.sourceId, cfg.source);
 
-  const fillMinzoom = key === 'showcase' ? 8 : 12;
+  const fillMinzoom = 12;
   map.addLayer({
     id: 'parcels-fill',
     type: 'fill',
@@ -664,7 +645,7 @@ function removeParcelLayers() {
   });
 }
 
-map.on('load', () => addParcelLayers('showcase'));
+map.on('load', () => addParcelLayers('atlanta'));
 
 document.getElementById('layer-select').addEventListener('change', (e) => {
   removeParcelLayers();

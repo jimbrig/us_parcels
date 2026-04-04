@@ -1,0 +1,11 @@
+[server]
+host = "0.0.0.0"
+port = 8080
+cors_origins = ["*"]
+
+[[sources]]
+id = "atlanta"
+type = "pmtiles"
+path = "/data/tiles/atlanta_downtown.pmtiles"
+name = "Atlanta Downtown Parcels"
+attribution = "LightBox Parcel Data"

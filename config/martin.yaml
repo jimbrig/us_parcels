@@ -3,14 +3,9 @@
 
 listen_addresses: "0.0.0.0:3000"
 
-# enable built-in web UI
-webui:
-  enable_for_all: true
-
 postgres:
   connection_string: postgresql://${POSTGRES_USER:-parcels}:${POSTGRES_PASSWORD:-parcels}@postgis:5432/${POSTGRES_DB:-parcels}
 
-  # expose the normalized serving table plus selected debug/support layers
   tables:
     parcels:
       schema: parcels
@@ -45,15 +40,6 @@ postgres:
         geoid: text
         total_value: bigint
 
-    # retained as a staging/debug source; do not treat as the primary parcel API
-    parcel-raw:
-      schema: parcels
-      table: parcel_raw
-      geometry_column: geom
-      srid: 4326
-      geometry_type: MULTIPOLYGON
-
-    # TIGER tables use SRID 4269 (NAD83) -- serve with correct SRID
     tiger-states:
       schema: tiger
       table: state
@@ -63,30 +49,6 @@ postgres:
         statefp: text
         name: text
         stusps: text
-
-    # tiger-counties and tiger-tracts require spatial indexes; run scripts/add_tiger_indexes.sql first
-    tiger-counties:
-      schema: tiger
-      table: county
-      geometry_column: the_geom
-      srid: 4269
-      properties:
-        statefp: text
-        countyfp: text
-        name: text
-        geoid: text
-
-    tiger-tracts:
-      schema: tiger
-      table: tract
-      geometry_column: the_geom
-      srid: 4269
-      properties:
-        statefp: text
-        countyfp: text
-        tractce: text
-        name: text
-        geoid: text
 
 # pmtiles file sources
 pmtiles:

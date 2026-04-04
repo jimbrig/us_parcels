@@ -52,6 +52,9 @@ Thumbs.db
 *.swo
 *~
 
+# ---- tools (large JARs, local-only binaries) ----
+tools/
+
 # ---- generated / temp ----
 repomix.md
 *.log
