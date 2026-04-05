@@ -77,7 +77,7 @@ def run_extraction(job_id: str, req: ExtractRequest):
             cmd = ["ogr2ogr", "-f", driver]
 
             if fmt == "parquet":
-                cmd += ["-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW"]
+                cmd += ["-lco", "COMPRESSION=ZSTD", "-lco", "SORT_BY_BBOX=YES", "-lco", "WRITE_COVERING_BBOX=YES"]
             if fmt == "pmtiles":
                 cmd += ["-dsco", "MINZOOM=12", "-dsco", "MAXZOOM=16", "-dsco", f"NAME={req.name}"]
             if req.simplify:

@@ -90,7 +90,7 @@ function Invoke-CountyExtract {
         return $out
     }
 
-    $env:OGR_SQLITE_PRAGMA = "mmap_size=107374182400,cache_size=-2097152,temp_store=MEMORY"
+    $env:OGR_SQLITE_PRAGMA = "mmap_size=107374182400,cache_size=-2097152,temp_store=MEMORY,journal_mode=OFF"
     $env:OGR_GPKG_NUM_THREADS = "4"
     $env:GDAL_CACHEMAX = "1024"
 
@@ -98,7 +98,8 @@ function Invoke-CountyExtract {
     $whereClause = "statefp='$StateFips' AND countyfp='$CountyFips'"
 
     pixi run ogr2ogr -f Parquet `
-        -lco COMPRESSION=ZSTD -lco GEOMETRY_ENCODING=GEOARROW -lco ROW_GROUP_SIZE=50000 `
+        -lco COMPRESSION=ZSTD -lco COMPRESSION_LEVEL=9 -lco ROW_GROUP_SIZE=50000 `
+        -lco SORT_BY_BBOX=YES -lco WRITE_COVERING_BBOX=YES `
         @bboxArgs -where $whereClause `
         $out $GpkgFile $GpkgLayer 2>&1
 
@@ -144,7 +145,7 @@ foreach ($county in $counties) {
             if (Test-Path $out) { Write-Host "skip $cf"; exit 0 }
             $env:OGR_SQLITE_PRAGMA = "mmap_size=107374182400,cache_size=-2097152,temp_store=MEMORY"
             $env:OGR_GPKG_NUM_THREADS = "4"
-            pixi run ogr2ogr -f Parquet -lco COMPRESSION=ZSTD -lco GEOMETRY_ENCODING=GEOARROW -lco ROW_GROUP_SIZE=50000 -spat $bb[0] $bb[1] $bb[2] $bb[3] -where "statefp='$sf' AND countyfp='$cf'" $out $gpkg $layer
+            pixi run ogr2ogr -f Parquet -lco COMPRESSION=ZSTD -lco COMPRESSION_LEVEL=9 -lco ROW_GROUP_SIZE=50000 -lco SORT_BY_BBOX=YES -lco WRITE_COVERING_BBOX=YES -spat $bb[0] $bb[1] $bb[2] $bb[3] -where "statefp='$sf' AND countyfp='$cf'" $out $gpkg $layer
             exit $LASTEXITCODE
         } -args $sf, $cf, $bb, $gpkg, $layer
     } -ArgumentList $State, $countyFips, $bbox, $GpkgFile, $GpkgLayer, (Get-Location).Path

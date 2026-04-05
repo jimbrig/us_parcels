@@ -165,7 +165,23 @@ services:
     volumes:
       - ./data/pmtiles:/data/tiles:ro
       - ./config/tileserver-rs.toml:/config/tileserver-rs.toml:ro
-    command: --config /config/tileserver-rs.toml
+    environment:
+      - RUST_LOG=${RUST_LOG:-debug}
+      - HOST=0.0.0.0
+      - PORT=8080
+      - TILESERVER_PUBLIC_URL=${TILESERVER_PUBLIC_URL:-}
+      - CONFIG_PATH=/config/tileserver-rs.toml
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
     restart: unless-stopped
 
   # ---- TiTiler (dynamic raster COG tile server) ----

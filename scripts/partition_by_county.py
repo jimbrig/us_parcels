@@ -47,14 +47,14 @@ def main() -> None:
     # step 2: discover counties and compute all county bboxes in a SINGLE table scan
     print(f"computing county bounds from {state_parquet} ...")
     print(f"  query: SELECT countyfp, MIN/MAX of bbox FROM read_parquet('{src}') GROUP BY countyfp")
-    # use centroidx/centroidy for bounds — ST_XMin(geom) fails on GeoArrow STRUCT columns
+    # WKB-encoded parquets: ST_XMin/ST_XMax work directly on the geometry column
     rows = con.execute(f"""
         SELECT
             countyfp,
-            MIN(centroidx) - 0.01 AS xmin,
-            MIN(centroidy) - 0.01 AS ymin,
-            MAX(centroidx) + 0.01 AS xmax,
-            MAX(centroidy) + 0.01 AS ymax,
+            MIN(ST_XMin(geom)) AS xmin,
+            MIN(ST_YMin(geom)) AS ymin,
+            MAX(ST_XMax(geom)) AS xmax,
+            MAX(ST_YMax(geom)) AS ymax,
             COUNT(*) AS n
         FROM read_parquet('{src}')
         GROUP BY countyfp
@@ -89,16 +89,14 @@ def main() -> None:
         _con = _duckdb.connect()
         _con.execute("LOAD spatial;")  # already installed globally, just LOAD
 
-        # use centroidx/centroidy for hilbert ordering (geoarrow STRUCT columns
-        # cannot be cast to GEOMETRY for ST_Hilbert)
         copy_sql = f"""
             COPY (
                 SELECT * FROM read_parquet('{src}')
                 WHERE countyfp = '{fips}'
-                ORDER BY ST_Hilbert(centroidx, centroidy, {bounds_sql})
+                ORDER BY ST_Hilbert(geom, {bounds_sql})
             )
             TO '{out_path.as_posix()}'
-            (FORMAT parquet, COMPRESSION zstd, COMPRESSION_LEVEL 3, ROW_GROUP_SIZE 10000)
+            (FORMAT parquet, COMPRESSION zstd, COMPRESSION_LEVEL 9, ROW_GROUP_SIZE 10000)
         """
         print(f"  county={fips}: query: COPY (SELECT ... WHERE countyfp='{fips}' ORDER BY ST_Hilbert) TO ...")
         _con.execute(copy_sql)

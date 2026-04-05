@@ -45,15 +45,17 @@ GPKG_LAYER <- "lr_parcel_us"
 
 # ---- step 1: extract state parquet from GPKG --------------------------------
 #
-# runs pixi-managed ogr2ogr with:
-#   -spat   : RTree spatial pre-filter (uses GPKG spatial index)
-#   -where  : attribute filter on statefp (eliminates cross-border features,
-#             applied to spatial-index candidates only — no full table scan)
-#   -lco COMPRESSION=ZSTD, GEOMETRY_ENCODING=GEOARROW, ROW_GROUP_SIZE=50000
-#   env vars: OGR_SQLITE_PRAGMA (mmap + large cache), OGR_GPKG_NUM_THREADS
+# single-step GPKG -> spatially-sorted GeoParquet via ogr2ogr:
+#   -spat          : RTree spatial pre-filter (uses GPKG spatial index)
+#   -where         : attribute filter on statefp (applied to RTree candidates only)
+#   SORT_BY_BBOX   : spatial ordering via temp GPKG RTree (replaces Hilbert sort)
+#   WRITE_COVERING_BBOX : per-feature bbox column for row-group spatial statistics
+#   COMPRESSION=ZSTD    : best ratio/speed for geospatial parquet
+#   WKB geometry (default) : universal compatibility with DuckDB, freestiler, sfarrow
+#   env vars: OGR_SQLITE_PRAGMA (mmap + large cache + journal_mode=OFF),
+#             OGR_GPKG_NUM_THREADS (parallel geom decoding)
 #
-# output: data/geoparquet/state=XX/parcels_raw.parquet  (unsorted)
-# the hilbert sort runs as a separate step to allow re-sorting without re-extraction.
+# output: data/geoparquet/state=XX/parcels.parquet (spatially sorted, final)
 #
 extract_state_parquet <- function(state_fips, gpkg = GPKG_FILE, layer = GPKG_LAYER) {
   bb  <- STATE_BOUNDS[[state_fips]]
@@ -61,15 +63,16 @@ extract_state_parquet <- function(state_fips, gpkg = GPKG_FILE, layer = GPKG_LAY
   if (!file.exists(gpkg)) cli::cli_abort("GPKG not found: {gpkg}")
 
   out_dir  <- file.path("data", "geoparquet", paste0("state=", state_fips))
-  out_path <- file.path(out_dir, "parcels_raw.parquet")
+  out_path <- file.path(out_dir, "parcels.parquet")
   dir.create(out_dir, recursive = TRUE, showWarnings = FALSE)
 
-  # exact ogr2ogr command (printed for transparency):
   args <- c(
     "-f", "Parquet",
     "-lco", "COMPRESSION=ZSTD",
-    "-lco", "GEOMETRY_ENCODING=GEOARROW",
+    "-lco", "COMPRESSION_LEVEL=9",
     "-lco", "ROW_GROUP_SIZE=50000",
+    "-lco", "SORT_BY_BBOX=YES",
+    "-lco", "WRITE_COVERING_BBOX=YES",
     "-spat", bb[1], bb[2], bb[3], bb[4],
     "-where", sprintf("statefp='%s'", state_fips),
     "-progress",
@@ -79,7 +82,7 @@ extract_state_parquet <- function(state_fips, gpkg = GPKG_FILE, layer = GPKG_LAY
 
   withr::with_envvar(
     c(
-      OGR_SQLITE_PRAGMA   = "mmap_size=107374182400,cache_size=-4194304,temp_store=MEMORY",
+      OGR_SQLITE_PRAGMA    = "mmap_size=107374182400,cache_size=-4194304,temp_store=MEMORY,journal_mode=OFF",
       OGR_GPKG_NUM_THREADS = "ALL_CPUS",
       GDAL_CACHEMAX        = "2048"
     ),
@@ -95,35 +98,6 @@ extract_state_parquet <- function(state_fips, gpkg = GPKG_FILE, layer = GPKG_LAY
   )
 
   cli::cli_alert_success("state={state_fips}: wrote {out_path}")
-  out_path
-}
-
-# ---- step 2: hilbert-sort raw parquet ---------------------------------------
-#
-# reads the unsorted parcels_raw.parquet and writes a hilbert-ordered parcels.parquet.
-# DuckDB reads the raw parquet, applies ST_Hilbert ordering, writes ZSTD parquet.
-#
-# exact DuckDB query:
-#   COPY (SELECT * FROM read_parquet('<raw>') ORDER BY ST_Hilbert(geom, ST_Extent(...)))
-#   TO '<out>' (FORMAT parquet, COMPRESSION zstd, COMPRESSION_LEVEL 3, ROW_GROUP_SIZE 50000)
-#
-hilbert_sort_parquet <- function(raw_path, state_fips) {
-  out_path <- file.path(dirname(raw_path), "parcels.parquet")
-
-  args <- c(
-    "--with", "duckdb",
-    "scripts/to_hilbert_parquet.py",
-    raw_path, out_path,
-    "--state", state_fips
-  )
-  cli::cli_alert_info("state={state_fips}: pixi run uv run {paste(args, collapse=' ')}")
-
-  rc <- processx::run("pixi", c("run", "uv", "run", args), echo = TRUE, error_on_status = FALSE)
-  if (rc$status != 0L) cli::cli_abort("hilbert sort failed for state={state_fips}")
-
-  # remove the unsorted intermediate
-  file.remove(raw_path)
-  cli::cli_alert_success("state={state_fips}: hilbert parquet -> {out_path}")
   out_path
 }
 

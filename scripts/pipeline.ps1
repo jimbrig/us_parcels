@@ -93,13 +93,19 @@ function Invoke-Extract {
     # sqlite mmap + large page cache dramatically reduce I/O overhead on the 94GB gpkg.
     # mmap lets the OS page cache serve reads instead of sqlite's internal buffer;
     # cache_size=-4194304 = 4GB sqlite page cache (negative value = kibibytes).
-    $env:OGR_SQLITE_PRAGMA = "mmap_size=107374182400,cache_size=-4194304,temp_store=MEMORY"
+    $env:OGR_SQLITE_PRAGMA = "mmap_size=107374182400,cache_size=-4194304,temp_store=MEMORY,journal_mode=OFF"
     $env:OGR_GPKG_NUM_THREADS = "ALL_CPUS"
     $env:GDAL_CACHEMAX = "2048"
 
     $ogrArgs = @("-f", $fmt)
     if ($fmt -eq "Parquet") {
-        $ogrArgs += @("-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW", "-lco", "ROW_GROUP_SIZE=50000")
+        $ogrArgs += @(
+            "-lco", "COMPRESSION=ZSTD",
+            "-lco", "COMPRESSION_LEVEL=9",
+            "-lco", "ROW_GROUP_SIZE=50000",
+            "-lco", "SORT_BY_BBOX=YES",
+            "-lco", "WRITE_COVERING_BBOX=YES"
+        )
     }
     if ($fmt -eq "PMTiles") {
         $ogrArgs += @("-dsco", "MINZOOM=8", "-dsco", "MAXZOOM=16", "-dsco", "NAME=$outName")
@@ -174,7 +180,7 @@ function Invoke-Export {
     )
 
     if ($fmt -eq "parquet") {
-        $dockerArgs += @("-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW")
+        $dockerArgs += @("-lco", "COMPRESSION=ZSTD", "-lco", "WRITE_COVERING_BBOX=YES")
     }
     if ($fmt -eq "pmtiles") {
         $dockerArgs += @("-dsco", "MINZOOM=12", "-dsco", "MAXZOOM=16", "-dsco", "NAME=$outName")
@@ -296,37 +302,19 @@ switch ($Action) {
         Write-Host " Cloud Pipeline: $Name (state $State)" -ForegroundColor Yellow
         Write-Host "======================================`n" -ForegroundColor Yellow
 
-        # direct GPKG -> raw parquet (no fgb intermediate): saves ~4GB of disk I/O per state.
-        # the raw parquet is not hilbert-sorted; the next step reorders it.
-        $rawParquetOutName = "state=$State/parcels_raw"
-        $rawParquetPath = Invoke-Extract -bbox $StateBounds[$State] -outName $rawParquetOutName -fmt "Parquet" -StateFilter $State
-        if (-not $rawParquetPath -or $LASTEXITCODE -ne 0) { Write-Err "GPKG extraction failed"; exit 1 }
-
-        Write-Step "raw Parquet -> Hilbert GeoParquet"
-        $parquetPath = "data/geoparquet/state=$State/parcels.parquet"
-        pixi run uv run --with duckdb scripts/to_hilbert_parquet.py $rawParquetPath $parquetPath --state $State
-        if ($LASTEXITCODE -ne 0) { Write-Err "Hilbert conversion failed"; exit 1 }
-
-        Write-Step "removing raw intermediate"
-        Remove-Item $rawParquetPath -ErrorAction SilentlyContinue
-
-        Write-Step "Hilbert Parquet -> PMTiles"
-        $pmtilesPath = "data/pmtiles/state=$State/parcels.pmtiles"
-        $pmtilesDir = Split-Path $pmtilesPath -Parent
-        if (-not (Test-Path $pmtilesDir)) { New-Item -ItemType Directory -Path $pmtilesDir -Force | Out-Null }
-        pixi run ogr2ogr -f PMTiles -dsco MINZOOM=8 -dsco MAXZOOM=16 -dsco NAME=parcels -progress $pmtilesPath $parquetPath
-        if ($LASTEXITCODE -eq 0) {
-            $sz = [math]::Round((Get-Item $pmtilesPath).Length / 1MB, 1)
-            Write-Ok "$pmtilesPath ($sz MB)"
-        } else {
-            Write-Err "PMTiles conversion failed"
-        }
+        # single-step GPKG -> spatially-sorted GeoParquet (WKB, bbox covering, ZSTD).
+        # SORT_BY_BBOX creates a temp GPKG RTree for spatial ordering — no separate
+        # Hilbert sort step needed. WKB encoding ensures universal downstream compatibility
+        # (DuckDB spatial, freestiler, sfarrow, QGIS).
+        $parquetOutName = "state=$State/parcels"
+        $parquetPath = Invoke-Extract -bbox $StateBounds[$State] -outName $parquetOutName -fmt "Parquet" -StateFilter $State
+        if (-not $parquetPath -or $LASTEXITCODE -ne 0) { Write-Err "GPKG extraction failed"; exit 1 }
 
         Write-Host "`n======================================" -ForegroundColor Green
         Write-Host " Cloud pipeline complete for $Name" -ForegroundColor Green
         Write-Host "======================================" -ForegroundColor Green
-        Write-Host "  GeoParquet: data/geoparquet/state=$State/parcels.parquet" -ForegroundColor White
-        Write-Host "  PMTiles:    data/pmtiles/state=$State/parcels.pmtiles" -ForegroundColor White
+        Write-Host "  GeoParquet: $parquetPath" -ForegroundColor White
+        Write-Host "  (PMTiles: generate with freestiler from R)" -ForegroundColor DarkGray
     }
     "cloud-full" {
         Write-Host "`n======================================" -ForegroundColor Yellow

@@ -1,7 +1,31 @@
+# root-level options must be first (before [sections])
+# fonts = "/assets/fonts"
+# files = "/assets/files"
+
+# server
 [server]
 host = "0.0.0.0"
 port = 8080
 cors_origins = ["*"]
+
+# telemetry
+[telemetry]
+enabled = false
+# enabled = true
+# endpoint = "http://localhost:4317"
+# metrics_enabled = true
+# metrics_export_interval_secs = 60
+
+[render]
+pool_size = 4
+render_timeout_secs = 30
+
+[[sources]]
+id = "georgia"
+type = "pmtiles"
+path = "/data/tiles/state=13/parcels.pmtiles"
+name = "Georgia State Parcels (z10-16, MLT)"
+attribution = "Georgia LightBox Parcel Data Q1 2026"
 
 [[sources]]
 id = "atlanta"
@@ -9,13 +33,6 @@ type = "pmtiles"
 path = "/data/tiles/atlanta_downtown.pmtiles"
 name = "Atlanta Downtown Parcels"
 attribution = "LightBox Parcel Data"
-
-[[sources]]
-id = "georgia"
-type = "pmtiles"
-path = "/data/tiles/state=13/parcels.pmtiles"
-name = "Georgia State Parcels (z10-16, MLT)"
-attribution = "LightBox Parcel Data Q1 2026"
 
 [[sources]]
 id = "ga-fulton"
@@ -30,3 +47,7 @@ type = "pmtiles"
 path = "/data/tiles/georgia/tiger_counties.pmtiles"
 name = "Georgia TIGER County Boundaries (z0-12, MLT)"
 attribution = "US Census TIGER 2024"
+
+[[styles]]
+#id = "parcels"
+#path = "/data/styles/parcels.json"

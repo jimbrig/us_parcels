@@ -72,27 +72,17 @@ make_state_targets <- function(fips) {
   tag <- paste0("s", fips)
 
   list(
-    # -- 1. extract raw (unsorted) parquet from GPKG --------------------------
-    # deployment = "main": runs in the main R process, never in a worker.
-    # this serialises all GPKG reads — SQLite handles one reader gracefully,
-    # but concurrent ogr2ogr processes on the same 94GB file thrash the page cache.
+    # -- 1. extract spatially-sorted parquet from GPKG ------------------------
+    # single step: GPKG -> sorted GeoParquet (SORT_BY_BBOX + WRITE_COVERING_BBOX).
+    # deployment = "main": serialises GPKG reads (single SQLite reader).
     tar_target(
-      name       = rlang::sym(paste0("raw_parquet_", tag)),
+      name       = rlang::sym(paste0("state_parquet_", tag)),
       command    = extract_state_parquet(!!fips),
       deployment = "main",
       format     = "file"
     ),
 
-    # -- 2. hilbert-sort the raw parquet --------------------------------------
-    # DuckDB CPU work: safe to parallelise across states.
-    tar_target(
-      name       = rlang::sym(paste0("state_parquet_", tag)),
-      command    = hilbert_sort_parquet(!!rlang::sym(paste0("raw_parquet_", tag)), !!fips),
-      deployment = "worker",
-      format     = "file"
-    ),
-
-    # -- 3a. county partitioning (optional) -----------------------------------
+    # -- 2a. county partitioning (optional) -----------------------------------
     if (PIPELINE_PARTITION_COUNTIES) {
       tar_target(
         name       = rlang::sym(paste0("county_parquets_", tag)),
@@ -102,8 +92,7 @@ make_state_targets <- function(fips) {
       )
     },
 
-    # -- 3b. state-level PMTiles ----------------------------------------------
-    # freestile_query() with streaming=always: 1-2GB parquet never enters R.
+    # -- 2b. state-level PMTiles ----------------------------------------------
     tar_target(
       name       = rlang::sym(paste0("state_pmtiles_", tag)),
       command    = tile_state_pmtiles(!!rlang::sym(paste0("state_parquet_", tag)), !!fips),
@@ -111,8 +100,7 @@ make_state_targets <- function(fips) {
       format     = "file"
     ),
 
-    # -- 3c. county-level PMTiles (optional, dynamic over county files) -------
-    # dynamic branching: one sub-target per county file returned by step 3a.
+    # -- 2c. county-level PMTiles (optional, dynamic over county files) -------
     if (PIPELINE_PARTITION_COUNTIES) {
       tarchetypes::tar_map(
         values = list(
