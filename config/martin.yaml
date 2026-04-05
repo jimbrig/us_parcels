@@ -1,5 +1,10 @@
 # martin tile server configuration
 # docs: https://maplibre.org/martin/config-file.html
+#
+# martin serves MVT tiles from PostGIS tables and MVT-encoded PMTiles files.
+# MLT-encoded PMTiles (from freestiler) are NOT supported by Martin — they are
+# served directly via the pmtiles JS protocol in map.html using the nginx
+# static file path /data/pmtiles/*.
 
 listen_addresses: "0.0.0.0:3000"
 
@@ -40,33 +45,20 @@ postgres:
         geoid: text
         total_value: bigint
 
-    tiger-states:
-      schema: tiger
-      table: state
-      geometry_column: the_geom
-      srid: 4269
-      properties:
-        statefp: text
-        name: text
-        stusps: text
-
-# pmtiles file sources
+# only MVT-encoded pmtiles are supported by martin
 pmtiles:
   paths:
     - /pmtiles
   sources:
     atlanta: /pmtiles/atlanta_downtown.pmtiles
 
-# serve MapLibre style files from /config/styles
 styles:
   paths:
     - /config/styles
 
-# serve fonts from /config/fonts
 fonts:
   - /config/fonts
 
-# serve sprites from /config/sprites
 sprites:
   paths:
     - /config/sprites

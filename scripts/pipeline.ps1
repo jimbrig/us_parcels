@@ -78,7 +78,7 @@ function Get-BboxArray([string]$bboxStr) {
 }
 
 function Invoke-Extract {
-    param([string]$bbox, [string]$outName, [string]$fmt = "Parquet")
+    param([string]$bbox, [string]$outName, [string]$fmt = "Parquet", [string]$StateFilter = "")
 
     $b = Get-BboxArray $bbox
     $ext = switch ($fmt) { "Parquet" { "parquet" } "FlatGeoBuf" { "fgb" } "PMTiles" { "pmtiles" } }
@@ -90,16 +90,34 @@ function Invoke-Extract {
 
     Write-Step "extracting $outName ($fmt) with bbox: $bbox"
 
+    # sqlite mmap + large page cache dramatically reduce I/O overhead on the 94GB gpkg.
+    # mmap lets the OS page cache serve reads instead of sqlite's internal buffer;
+    # cache_size=-4194304 = 4GB sqlite page cache (negative value = kibibytes).
+    $env:OGR_SQLITE_PRAGMA = "mmap_size=107374182400,cache_size=-4194304,temp_store=MEMORY"
+    $env:OGR_GPKG_NUM_THREADS = "ALL_CPUS"
+    $env:GDAL_CACHEMAX = "2048"
+
     $ogrArgs = @("-f", $fmt)
     if ($fmt -eq "Parquet") {
-        $ogrArgs += @("-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW")
+        $ogrArgs += @("-lco", "COMPRESSION=ZSTD", "-lco", "GEOMETRY_ENCODING=GEOARROW", "-lco", "ROW_GROUP_SIZE=50000")
     }
     if ($fmt -eq "PMTiles") {
-        $ogrArgs += @("-dsco", "MINZOOM=12", "-dsco", "MAXZOOM=16", "-dsco", "NAME=$outName")
+        $ogrArgs += @("-dsco", "MINZOOM=8", "-dsco", "MAXZOOM=16", "-dsco", "NAME=$outName")
     }
-    $ogrArgs += @("-spat", $b[0], $b[1], $b[2], $b[3], "-progress", $outFile, $GpkgFile, $GpkgLayer)
+    $ogrArgs += @("-spat", $b[0], $b[1], $b[2], $b[3])
+    # combine spatial pre-filter (uses rtree) with attribute check to eliminate cross-border parcels
+    if ($StateFilter) {
+        $ogrArgs += @("-where", "statefp='$StateFilter'")
+    }
+    $ogrArgs += @("-progress", $outFile, $GpkgFile, $GpkgLayer)
 
+    Write-Host "    cmd: pixi run ogr2ogr $($ogrArgs -join ' ')" -ForegroundColor DarkGray
     pixi run ogr2ogr @ogrArgs
+
+    # clear env overrides
+    Remove-Item Env:OGR_SQLITE_PRAGMA -ErrorAction SilentlyContinue
+    Remove-Item Env:OGR_GPKG_NUM_THREADS -ErrorAction SilentlyContinue
+    Remove-Item Env:GDAL_CACHEMAX -ErrorAction SilentlyContinue
 
     if ($LASTEXITCODE -eq 0) {
         $size = (Get-Item $outFile).Length / 1MB
@@ -278,25 +296,37 @@ switch ($Action) {
         Write-Host " Cloud Pipeline: $Name (state $State)" -ForegroundColor Yellow
         Write-Host "======================================`n" -ForegroundColor Yellow
 
-        $fgbOutName = "state=$State/parcels"
-        $fgbPath = Invoke-Extract -bbox $StateBounds[$State] -outName $fgbOutName -fmt "FlatGeoBuf"
-        if (-not $fgbPath) { exit 1 }
+        # direct GPKG -> raw parquet (no fgb intermediate): saves ~4GB of disk I/O per state.
+        # the raw parquet is not hilbert-sorted; the next step reorders it.
+        $rawParquetOutName = "state=$State/parcels_raw"
+        $rawParquetPath = Invoke-Extract -bbox $StateBounds[$State] -outName $rawParquetOutName -fmt "Parquet" -StateFilter $State
+        if (-not $rawParquetPath -or $LASTEXITCODE -ne 0) { Write-Err "GPKG extraction failed"; exit 1 }
 
-        Write-Step "FGB -> Hilbert GeoParquet"
+        Write-Step "raw Parquet -> Hilbert GeoParquet"
         $parquetPath = "data/geoparquet/state=$State/parcels.parquet"
-        uv run --with duckdb scripts/fgb_to_hilbert_parquet.py $fgbPath $parquetPath --state $State
+        pixi run uv run --with duckdb scripts/to_hilbert_parquet.py $rawParquetPath $parquetPath --state $State
         if ($LASTEXITCODE -ne 0) { Write-Err "Hilbert conversion failed"; exit 1 }
 
-        Write-Step "FGB -> PMTiles"
+        Write-Step "removing raw intermediate"
+        Remove-Item $rawParquetPath -ErrorAction SilentlyContinue
+
+        Write-Step "Hilbert Parquet -> PMTiles"
         $pmtilesPath = "data/pmtiles/state=$State/parcels.pmtiles"
-        Invoke-FgbToPmtiles -fgbPath $fgbPath -outPath $pmtilesPath
+        $pmtilesDir = Split-Path $pmtilesPath -Parent
+        if (-not (Test-Path $pmtilesDir)) { New-Item -ItemType Directory -Path $pmtilesDir -Force | Out-Null }
+        pixi run ogr2ogr -f PMTiles -dsco MINZOOM=8 -dsco MAXZOOM=16 -dsco NAME=parcels -progress $pmtilesPath $parquetPath
+        if ($LASTEXITCODE -eq 0) {
+            $sz = [math]::Round((Get-Item $pmtilesPath).Length / 1MB, 1)
+            Write-Ok "$pmtilesPath ($sz MB)"
+        } else {
+            Write-Err "PMTiles conversion failed"
+        }
 
         Write-Host "`n======================================" -ForegroundColor Green
         Write-Host " Cloud pipeline complete for $Name" -ForegroundColor Green
         Write-Host "======================================" -ForegroundColor Green
-        Write-Host "  FGB:       $fgbPath" -ForegroundColor White
         Write-Host "  GeoParquet: data/geoparquet/state=$State/parcels.parquet" -ForegroundColor White
-        Write-Host "  PMTiles:   data/pmtiles/state=$State/parcels.pmtiles" -ForegroundColor White
+        Write-Host "  PMTiles:    data/pmtiles/state=$State/parcels.pmtiles" -ForegroundColor White
     }
     "cloud-full" {
         Write-Host "`n======================================" -ForegroundColor Yellow

@@ -27,8 +27,11 @@ ingest    = { cmd = "docker compose --profile tools run --rm gdal bash scripts/i
 ingest-ps = { cmd = "pwsh -NoProfile -File scripts/ingest_postgis.ps1", description = "Ingest via PowerShell wrapper script" }
 
 # ---- pipeline ----
-pipeline  = { cmd = "pwsh -NoProfile -File scripts/pipeline.ps1", description = "Pipeline entrypoint (pass -- -Action ...)" }
-showcase  = { cmd = "pwsh -NoProfile -File scripts/showcase.ps1", description = "Run cloud pipeline on minimal sample (no GPKG)" }
+pipeline          = { cmd = "pwsh -NoProfile -File scripts/pipeline.ps1", description = "Pipeline entrypoint (pass -- -Action ...)" }
+extract-parallel  = { cmd = "pwsh -NoProfile -File scripts/extract_state_parallel.ps1", description = "Parallel county extraction (pass -- -State 13 -Parallelism 8)" }
+hilbert-sort      = { cmd = "uv run --with duckdb scripts/to_hilbert_parquet.py", description = "Hilbert-sort a FGB or Parquet to GeoParquet (pass -- in.parquet out.parquet --state 13)" }
+partition-county  = { cmd = "uv run --with duckdb scripts/partition_by_county.py", description = "Partition state GeoParquet into county files (pass -- --state 13 --parallelism 4)" }
+showcase          = { cmd = "pwsh -NoProfile -File scripts/showcase.ps1", description = "Run cloud pipeline on minimal sample (no GPKG)" }
 
 # ---- cloud artifacts ----
 upload-minio      = { cmd = "uv run --with minio scripts/upload_to_minio.py", description = "Upload cloud artifacts to MinIO" }
@@ -73,7 +76,9 @@ pyogrio               = ">=0.12,<1"
 shapely               = ">=2.0,<3"
 
 # ---- Python analytics ----
-duckdb                = ">=1.4,<2"
+# duckdb is intentionally NOT listed here as a conda dep - the conda package's
+# bundled libduckdb conflicts with libgdal-arrow-parquet (both include Arrow).
+# use: pixi run uv run --with duckdb <script.py>
 pandas                = ">=2.2,<3"
 
 # ---- database ----

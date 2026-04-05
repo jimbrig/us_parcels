@@ -153,6 +153,21 @@ services:
       - ./node_modules:/usr/share/nginx/html/node_modules:ro
     restart: unless-stopped
 
+  # ---- tileserver-rs (PMTiles + MVT-to-MLT transcoding on-the-fly) ----
+  # MLT tiles are requested via the .mlt extension on tile URLs, e.g.:
+  #   http://localhost:8082/parcels-ga/12/1234/5678.mlt
+  # Requires MapLibre GL JS v5.12+ which natively decodes MLT.
+  tileserver-rs:
+    image: ghcr.io/vinayakkulkarni/tileserver-rs:latest
+    container_name: parcels-tileserver-rs
+    ports:
+      - "8082:8080"
+    volumes:
+      - ./data/pmtiles:/data/tiles:ro
+      - ./config/tileserver-rs.toml:/config/tileserver-rs.toml:ro
+    command: --config /config/tileserver-rs.toml
+    restart: unless-stopped
+
   # ---- TiTiler (dynamic raster COG tile server) ----
   titiler:
     image: ghcr.io/developmentseed/titiler:latest

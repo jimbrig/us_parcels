@@ -9,3 +9,24 @@ type = "pmtiles"
 path = "/data/tiles/atlanta_downtown.pmtiles"
 name = "Atlanta Downtown Parcels"
 attribution = "LightBox Parcel Data"
+
+[[sources]]
+id = "georgia"
+type = "pmtiles"
+path = "/data/tiles/state=13/parcels.pmtiles"
+name = "Georgia State Parcels (z10-16, MLT)"
+attribution = "LightBox Parcel Data Q1 2026"
+
+[[sources]]
+id = "ga-fulton"
+type = "pmtiles"
+path = "/data/tiles/state=13/county=121/parcels.pmtiles"
+name = "Fulton County GA Parcels (z12-16, MLT)"
+attribution = "LightBox Parcel Data Q1 2026"
+
+[[sources]]
+id = "ga-tiger"
+type = "pmtiles"
+path = "/data/tiles/georgia/tiger_counties.pmtiles"
+name = "Georgia TIGER County Boundaries (z0-12, MLT)"
+attribution = "US Census TIGER 2024"

@@ -3,10 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>US Parcels - Full Map</title>
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.css">
+  <title>US Parcels - Map</title>
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@5.22.0/dist/maplibre-gl.css">
   <link rel="stylesheet" href="/config/map.css">
-  <script src="https://unpkg.com/maplibre-gl@5.19.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/maplibre-gl@5.22.0/dist/maplibre-gl.js"></script>
+  <script src="https://unpkg.com/pmtiles@4.4.0/dist/pmtiles.js"></script>
 </head>
 <body>
 
@@ -14,9 +15,10 @@
   <a href="/">Dashboard</a>
   <a href="/ingest.html">Extract & Ingest</a>
   <select id="source-select">
-    <option value="atlanta">Atlanta Parcels (Martin)</option>
+    <option value="georgia">Georgia (state, z10-16)</option>
+    <option value="fulton">Fulton County (z12-16)</option>
+    <option value="atlanta">Atlanta Downtown (MVT)</option>
     <option value="postgis">PostGIS (working subset)</option>
-    <option value="mlt-martin">Georgia MLT (experimental)</option>
   </select>
 </div>
 
@@ -25,8 +27,46 @@
 
 <script>
 (function() {
+  const protocol = new pmtiles.Protocol();
+  maplibregl.addProtocol('pmtiles', protocol.tile);
+
   const base = window.location.origin;
   const SOURCES = {
+    georgia: {
+      id: 'parcels-georgia',
+      spec: {
+        type: 'vector',
+        url: 'pmtiles://' + base + '/data/pmtiles/state=13/parcels.pmtiles',
+        encoding: 'mlt'
+      },
+      sourceLayer: 'parcels',
+      center: [-83.5, 32.7],
+      zoom: 10,
+      fillMinzoom: 10,
+      propMap: { addr: 'parceladdr', owner: 'ownername', value: 'totalvalue', use: 'usedesc' },
+      tigerSource: {
+        id: 'tiger-ga',
+        spec: {
+          type: 'vector',
+          url: 'pmtiles://' + base + '/data/pmtiles/georgia/tiger_counties.pmtiles',
+          encoding: 'mlt'
+        },
+        sourceLayer: 'counties'
+      }
+    },
+    fulton: {
+      id: 'parcels-fulton',
+      spec: {
+        type: 'vector',
+        url: 'pmtiles://' + base + '/data/pmtiles/state=13/county=121/parcels.pmtiles',
+        encoding: 'mlt'
+      },
+      sourceLayer: 'parcels',
+      center: [-84.39, 33.77],
+      zoom: 13,
+      fillMinzoom: 12,
+      propMap: { addr: 'parceladdr', owner: 'ownername', value: 'totalvalue', use: 'usedesc' }
+    },
     atlanta: {
       id: 'parcels-atlanta',
       spec: { type: 'vector', tiles: [`${base}/tiles/atlanta/{z}/{x}/{y}`], minzoom: 12, maxzoom: 16 },
@@ -44,19 +84,10 @@
       zoom: 14,
       fillMinzoom: 12,
       propMap: { addr: 'parcel_address', owner: 'owner_name', value: 'total_value', use: 'use_description' }
-    },
-    'mlt-martin': {
-      id: 'parcels-mlt-martin',
-      spec: { type: 'vector', tiles: [`${base}/tiles/parcels-ga-mlt/{z}/{x}/{y}`], minzoom: 8, maxzoom: 16 },
-      sourceLayer: 'parcels',
-      center: [-83.5, 32.5],
-      zoom: 12,
-      fillMinzoom: 8,
-      propMap: { addr: 'parcel_address', owner: 'owner_name', value: 'total_value', use: 'use_description' }
     }
   };
 
-  let activeKey = 'atlanta';
+  let activeKey = 'georgia';
   let currentPopup = null;
 
   const map = new maplibregl.Map({
@@ -68,12 +99,12 @@
       },
       layers: [{ id: 'osm', type: 'raster', source: 'osm' }]
     },
-    center: SOURCES.atlanta.center,
-    zoom: SOURCES.atlanta.zoom
+    center: SOURCES.georgia.center,
+    zoom: SOURCES.georgia.zoom,
+    hash: true
   });
 
   map.addControl(new maplibregl.NavigationControl());
-  map.addControl(new maplibregl.AttributionControl({ compact: true }));
 
   function setStatus(msg, type) {
     const el = document.getElementById('map-status');
@@ -82,33 +113,55 @@
     if (msg) setTimeout(() => { el.textContent = ''; el.className = 'map-status'; }, 4000);
   }
 
+  function clearLayers() {
+    ['parcels-fill', 'parcels-outline', 'parcels-highlight', 'tiger-fill', 'tiger-outline'].forEach(id => {
+      if (map.getLayer(id)) map.removeLayer(id);
+    });
+    Object.values(SOURCES).forEach(s => {
+      if (map.getSource(s.id)) map.removeSource(s.id);
+      if (s.tigerSource && map.getSource(s.tigerSource.id)) map.removeSource(s.tigerSource.id);
+    });
+  }
+
   function addParcelLayer(key) {
     const cfg = SOURCES[key];
-    const fillMinzoom = cfg.fillMinzoom ?? 12;
 
-    if (map.getSource(cfg.id)) {
-      map.removeSource(cfg.id);
+    if (cfg.tigerSource) {
+      map.addSource(cfg.tigerSource.id, cfg.tigerSource.spec);
+      map.addLayer({
+        id: 'tiger-fill', type: 'fill', source: cfg.tigerSource.id,
+        'source-layer': cfg.tigerSource.sourceLayer,
+        minzoom: 4, maxzoom: 12,
+        paint: { 'fill-color': '#1e3a5f', 'fill-opacity': 0.3 }
+      });
+      map.addLayer({
+        id: 'tiger-outline', type: 'line', source: cfg.tigerSource.id,
+        'source-layer': cfg.tigerSource.sourceLayer,
+        minzoom: 4, maxzoom: 14,
+        paint: { 'line-color': '#4a90d9', 'line-width': 0.8, 'line-opacity': 0.6 }
+      });
     }
+
     map.addSource(cfg.id, cfg.spec);
 
     map.addLayer({
       id: 'parcels-fill', type: 'fill', source: cfg.id,
-      'source-layer': cfg.sourceLayer, minzoom: fillMinzoom,
+      'source-layer': cfg.sourceLayer, minzoom: cfg.fillMinzoom,
       paint: {
         'fill-color': ['case',
           ['has', cfg.propMap.value],
-          ['interpolate', ['linear'], ['get', cfg.propMap.value],
+          ['interpolate', ['linear'], ['to-number', ['get', cfg.propMap.value], 0],
             0, '#3b82f6', 100000, '#6366f1', 500000, '#8b5cf6',
             2000000, '#f59e0b', 10000000, '#ef4444'],
           '#6366f1'
         ],
-        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 12, 0.25, 15, 0.4, 17, 0.55]
+        'fill-opacity': ['interpolate', ['linear'], ['zoom'], 10, 0.15, 12, 0.25, 15, 0.4, 17, 0.55]
       }
     });
 
     map.addLayer({
       id: 'parcels-outline', type: 'line', source: cfg.id,
-      'source-layer': cfg.sourceLayer, minzoom: fillMinzoom,
+      'source-layer': cfg.sourceLayer, minzoom: Math.max(cfg.fillMinzoom, 12),
       paint: {
         'line-color': '#312e81',
         'line-width': ['interpolate', ['linear'], ['zoom'], 12, 0.3, 15, 0.8, 17, 1.2],
@@ -116,23 +169,7 @@
       }
     });
 
-    map.addLayer({
-      id: 'parcels-highlight', type: 'line', source: cfg.id,
-      'source-layer': cfg.sourceLayer, minzoom: fillMinzoom,
-      paint: { 'line-color': '#fbbf24', 'line-width': 2.5, 'line-opacity': 0.9 },
-      filter: ['==', ['get', cfg.propMap.addr], '']
-    });
-
     activeKey = key;
-  }
-
-  function removeParcelLayer() {
-    ['parcels-fill', 'parcels-outline'].forEach(id => {
-      if (map.getLayer(id)) map.removeLayer(id);
-    });
-    ['parcels-atlanta', 'parcels-postgis', 'parcels-mlt-martin'].forEach(id => {
-      if (map.getSource(id)) map.removeSource(id);
-    });
   }
 
   function showParcelPopup(lngLat, properties) {
@@ -151,35 +188,26 @@
         <span class="label">Use:</span> ${use}
       </div>`)
       .addTo(map);
-    currentPopup.on('close', () => { currentPopup = null; });
   }
 
   map.on('load', () => {
-    setStatus('Loading parcels...', 'loading');
-    addParcelLayer('atlanta');
-    document.getElementById('source-select').value = 'atlanta';
-    map.once('sourcedata', (e) => {
-      if (e.sourceId === 'parcels-atlanta' && e.isSourceLoaded) {
-        setStatus('Parcels loaded. Click for details.', 'success');
-      }
-    });
+    setStatus('Loading Georgia parcels...', 'loading');
+    addParcelLayer('georgia');
+    document.getElementById('source-select').value = 'georgia';
+    setStatus('Georgia parcels loaded (z10-16). Zoom in for detail.', 'success');
   });
 
   document.getElementById('source-select').addEventListener('change', (e) => {
     const key = e.target.value;
     setStatus('Loading ' + key + '...', 'loading');
-    removeParcelLayer();
+    clearLayers();
     try {
       addParcelLayer(key);
       const cfg = SOURCES[key];
       map.flyTo({ center: cfg.center, zoom: cfg.zoom });
-      map.once('sourcedata', (e) => {
-        if (e.sourceId === cfg.id && e.isSourceLoaded) {
-          setStatus('Source loaded.', 'success');
-        }
-      });
+      setStatus('Source loaded.', 'success');
     } catch (err) {
-      setStatus('Failed to load source: ' + err.message, 'error');
+      setStatus('Failed: ' + err.message, 'error');
     }
   });
 
@@ -190,22 +218,10 @@
 
   map.on('mouseenter', 'parcels-fill', () => map.getCanvas().style.cursor = 'pointer');
   map.on('mouseleave', 'parcels-fill', () => map.getCanvas().style.cursor = '');
-
   map.on('error', (e) => setStatus('Map error: ' + (e.error?.message || 'unknown'), 'error'));
 
   if (new URLSearchParams(window.location.search).get('test') === '1') {
     window.__parcelsMap = map;
-    window.__showParcelPopupForTest = () => {
-      showParcelPopup(
-        { lng: -84.3885, lat: 33.7515 },
-        {
-          parcel_address: '100 Peachtree St',
-          owner_name: 'Showcase Demo LLC',
-          total_value: 450000,
-          use_description: 'commercial'
-        }
-      );
-    };
   }
 })();
 </script>
